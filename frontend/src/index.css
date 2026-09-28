@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html, body, #root { min-height: 100%; }
+
+  body {
+    margin: 0;
+    background: #fff;
+    color: #080808;
+    font-family: 'Nunito Sans', 'Avenir Next', Avenir, ui-sans-serif, system-ui, sans-serif;
+  }
+}
