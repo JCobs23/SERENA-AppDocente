@@ -1,4 +1,6 @@
 Serena.Api/bin/
 Serena.Api/obj/
+Serena.Api/build-*/
+Serena.Api/Data/teachers.json
 .dotnet-cli/
 UnityIntegration/

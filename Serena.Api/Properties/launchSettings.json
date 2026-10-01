@@ -1,11 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "http": {
+    "Serena": {
       "commandName": "Project",
       "dotnetRunMessages": true,
-      "launchBrowser": true,
-      "applicationUrl": "http://localhost:5222",
+      "launchBrowser": false,
+      "applicationUrl": "http://0.0.0.0:5080;https://localhost:5081",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

@@ -1,28 +1,90 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://0.0.0.0:5080");
-
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
-    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
-
+builder.WebHost.UseUrls("http://0.0.0.0:5080;https://localhost:5081");
 var app = builder.Build();
-app.UseCors();
 
 var sessions = new ConcurrentDictionary<string, ClassroomSession>();
+var teacherSessions = new ConcurrentDictionary<string, TeacherSession>();
+var loginAttempts = new ConcurrentDictionary<string, LoginAttemptWindow>();
 var sessionLifetime = TimeSpan.FromHours(4);
+var teacherSessionLifetime = TimeSpan.FromHours(8);
+const string sessionCookieName = "Serena.Session";
+var apiContentRoot = File.Exists(Path.Combine(app.Environment.ContentRootPath, "Serena.Api.csproj"))
+    ? app.Environment.ContentRootPath
+    : Path.Combine(app.Environment.ContentRootPath, "Serena.Api");
+var usersPath = Path.Combine(apiContentRoot, "Data", "teachers.json");
+var dummyCredential = new TeacherCredential("", "AAAAAAAAAAAAAAAAAAAAAA==", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 600_000);
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapPost("/api/sessions", () =>
+app.MapPost("/api/auth/login", (HttpContext context, LoginRequest request) =>
 {
+    if (!context.Request.IsHttps) return Results.BadRequest(new { message = "HTTPS is required." });
+    context.Response.Headers.CacheControl = "no-store";
+    if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254
+        || string.IsNullOrEmpty(request.Password) || request.Password.Length > 128)
+        return Results.BadRequest(new { message = "Invalid credentials." });
+
+    var clientKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTimeOffset.UtcNow;
+    var attempts = loginAttempts.AddOrUpdate(clientKey,
+        _ => new LoginAttemptWindow(now, 1),
+        (_, current) => now - current.StartedAt > TimeSpan.FromMinutes(15)
+            ? new LoginAttemptWindow(now, 1)
+            : current with { Count = current.Count + 1 });
+    if (attempts.Count > 10) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
+    var email = request.Email.Trim();
+    var user = ReadTeacherUsers(usersPath).FirstOrDefault(candidate =>
+        string.Equals(candidate.Email, email, StringComparison.OrdinalIgnoreCase));
+    var passwordMatches = VerifyPassword(request.Password, user ?? dummyCredential);
+    if (user is null || !passwordMatches) return Results.Unauthorized();
+
+    loginAttempts.TryRemove(clientKey, out _);
+    var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    teacherSessions[token] = new TeacherSession(user.Email, now.Add(teacherSessionLifetime));
+    context.Response.Cookies.Append(sessionCookieName, token, new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        IsEssential = true,
+        Path = "/",
+        Expires = now.Add(teacherSessionLifetime)
+    });
+    return Results.Ok(new { authenticated = true, email = user.Email });
+});
+
+app.MapGet("/api/auth/me", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(new { email = teacher.Email });
+});
+
+app.MapPost("/api/auth/logout", (HttpContext context) =>
+{
+    if (context.Request.Cookies.TryGetValue(sessionCookieName, out var token)) teacherSessions.TryRemove(token, out _);
+    context.Response.Cookies.Delete(sessionCookieName, new CookieOptions
+    {
+        HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, Path = "/"
+    });
+    return Results.Ok(new { loggedOut = true });
+});
+
+app.MapPost("/api/sessions", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
     CleanupExpiredSessions(sessions, sessionLifetime);
     string code;
     do { code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6"); }
     while (sessions.ContainsKey(code));
-
-    var session = new ClassroomSession(code, DateTimeOffset.UtcNow);
+    var session = new ClassroomSession(code, DateTimeOffset.UtcNow, teacher.Email);
     sessions[code] = session;
     return Results.Created($"/api/sessions/{code}", new { code, createdAt = session.CreatedAt });
 });
@@ -30,34 +92,77 @@ app.MapPost("/api/sessions", () =>
 app.MapGet("/api/sessions/{code}", (string code) =>
 {
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime))
-        return Results.NotFound(new { message = "La sesión no existe o ya expiró." });
-
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
     return Results.Ok(new { code = session.Code, active = true });
 });
 
 app.MapPost("/api/sessions/{code}/students", (string code, JoinRequest request) =>
 {
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime))
-        return Results.NotFound(new { message = "La sesión no existe o ya expiró." });
-
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
     var name = (request.Name ?? string.Empty).Trim();
     if (name.Length is < 2 or > 60)
-        return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = ["El nombre debe tener entre 2 y 60 caracteres."] });
-
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = ["Name must contain between 2 and 60 characters."] });
     var studentId = Guid.NewGuid().ToString("N");
     session.Students[studentId] = name;
     return Results.Ok(new { studentId, sessionCode = code, joined = true });
 });
 
-app.MapGet("/api/sessions/{code}/students", (string code) =>
+app.MapGet("/api/sessions/{code}/students", (HttpContext context, string code) =>
 {
-    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime))
-        return Results.NotFound(new { message = "La sesión no existe o ya expiró." });
-
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    context.Response.Headers.CacheControl = "no-store";
     return Results.Ok(new { count = session.Students.Count, students = session.Students.Select(pair => new { id = pair.Key, name = pair.Value }) });
 });
 
 app.Run();
+
+static List<TeacherCredential> ReadTeacherUsers(string path)
+{
+    try
+    {
+        if (!File.Exists(path)) return [];
+        var store = JsonSerializer.Deserialize<TeacherStore>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return store?.Users ?? [];
+    }
+    catch (JsonException) { return []; }
+    catch (IOException) { return []; }
+}
+
+static bool VerifyPassword(string password, TeacherCredential user)
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(user.Salt) || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
+        if (user.Iterations is < 100_000 or > 2_000_000) return false;
+        var salt = Convert.FromBase64String(user.Salt);
+        var expected = Convert.FromBase64String(user.PasswordHash);
+        if (salt.Length < 16 || expected.Length < 32) return false;
+        var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, user.Iterations, HashAlgorithmName.SHA256, expected.Length);
+        var matches = CryptographicOperations.FixedTimeEquals(actual, expected);
+        CryptographicOperations.ZeroMemory(actual);
+        return matches;
+    }
+    catch (FormatException) { return false; }
+    catch (ArgumentException) { return false; }
+}
+
+static bool TryGetTeacher(HttpContext context, ConcurrentDictionary<string, TeacherSession> sessions, string cookieName, out TeacherSession teacher)
+{
+    teacher = null!;
+    if (!context.Request.Cookies.TryGetValue(cookieName, out var token) || !sessions.TryGetValue(token, out var found)) return false;
+    if (found.ExpiresAt <= DateTimeOffset.UtcNow)
+    {
+        sessions.TryRemove(token, out _);
+        return false;
+    }
+    teacher = found;
+    return true;
+}
 
 static bool IsSessionCode(string code) => code.Length == 6 && code.All(char.IsAsciiDigit);
 static bool IsExpired(ClassroomSession session, TimeSpan lifetime) => DateTimeOffset.UtcNow - session.CreatedAt > lifetime;
@@ -67,11 +172,17 @@ static void CleanupExpiredSessions(ConcurrentDictionary<string, ClassroomSession
         if (IsExpired(pair.Value, lifetime)) sessions.TryRemove(pair.Key, out _);
 }
 
-sealed class ClassroomSession(string code, DateTimeOffset createdAt)
+sealed record TeacherStore(List<TeacherCredential> Users);
+sealed record TeacherCredential(string Email, string Salt, string PasswordHash, int Iterations);
+sealed record TeacherSession(string Email, DateTimeOffset ExpiresAt);
+sealed record LoginAttemptWindow(DateTimeOffset StartedAt, int Count);
+sealed record LoginRequest(string? Email, string? Password);
+sealed record JoinRequest(string? Name);
+
+sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
     public string Code { get; } = code;
     public DateTimeOffset CreatedAt { get; } = createdAt;
+    public string TeacherEmail { get; } = teacherEmail;
     public ConcurrentDictionary<string, string> Students { get; } = new();
 }
-
-sealed record JoinRequest(string? Name);
