@@ -37,6 +37,26 @@ form.addEventListener('submit', async (event) => {
   submitButton.disabled = true;
   submitButton.setAttribute('aria-busy', 'true');
   document.querySelector('.button-label').textContent = 'Validando…';
+  
+  // --- SIMULACIÓN DE CONEXIÓN ---
+  // Simulamos que el servidor tarda 2 segundos en responder (2000 milisegundos)
+  setTimeout(() => {
+    // 1. Restauramos el botón
+    submitButton.disabled = false;
+    submitButton.removeAttribute('aria-busy');
+    document.querySelector('.button-label').textContent = 'Iniciar sesión';
+
+    // 2. Mostramos mensaje de éxito
+    formMessage.textContent = 'Inicio de sesión exitoso.';
+    formMessage.classList.add('success');
+
+    // 3. Redirigimos a la siguiente pestaña
+    // Asegúrate de crear este archivo html en tu carpeta para que funcione
+    window.location.href = 'bienvenida.html'; 
+  }, 2000);
+  // --- FIN DE SIMULACIÓN ---
+  
+  /* COMENTAMOS EL CÓDIGO REAL HASTA QUE HAYA BASE DE DATOS
   try {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
@@ -65,6 +85,8 @@ form.addEventListener('submit', async (event) => {
     submitButton.removeAttribute('aria-busy');
     document.querySelector('.button-label').textContent = 'Iniciar sesión';
   }
+
+  */
 });
 
 for (const input of [emailInput, passwordInput]) {
