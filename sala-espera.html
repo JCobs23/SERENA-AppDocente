@@ -3,70 +3,79 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Serena | Sala de Espera</title>
+    <title>Serena | Waiting Room</title>
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="waiting-room-body">
     
     <!-- Barra superior -->
     <nav class="top-nav">
-        <a href="#" class="back-link">&larr; Return to chapters</a>
-        <button id="btn-help" class="help-btn" aria-label="Controles">?</button>
+        <a href="#" class="back-link">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Return to chapters
+        </a>
+        <div class="help-btn-container">
+            <button id="btn-help" class="help-btn" aria-label="Controles">?</button>
+            <span class="notification-dot"></span>
+        </div>
     </nav>
 
-    <main class="waiting-page">
-        <!-- Encabezado de la sesión -->
-        <header class="session-header">
-            <p class="subtitle">Connection Code</p>
-            <h1 class="code">12345</h1>
-            
-            <div class="badges">
-                <span class="badge grey">Waiting room</span>
-                <span class="badge grey">Chapter 1: Narrative 1</span>
-                <span class="badge red">Preparando sesión</span>
-            </div>
-        </header>
+    <!-- Encabezado central -->
+    <header class="session-header">
+        <h1>Waiting room</h1>
+        <p class="chapter-text">Chapter 1: Narrative 1</p>
+        <p class="status-text">Preparando sesión</p>
+    </header>
 
-        <!-- Lista de estudiantes -->
-        <section class="students-section">
+    <main class="cards-container">
+        
+        <!-- Tarjeta Izquierda: Código -->
+        <section class="card left-card">
+            <h2>Connection Code</h2>
+            <div class="code-wrapper">
+                <div class="code-glow"></div>
+                <div class="code-text">1 2 3 4 5</div>
+            </div>
+        </section>
+
+        <!-- Tarjeta Derecha: Estudiantes -->
+        <section class="card right-card">
             <div class="students-header">
                 <h2>Students</h2>
                 <span id="ready-counter" class="counter">0/12 ready</span>
             </div>
             
-            <!-- Aquí JavaScript inyectará a los estudiantes -->
             <div class="students-grid" id="students-grid">
-                <!-- Se llena dinámicamente -->
+                <!-- Inyectado por JS -->
             </div>
         </section>
+        
     </main>
 
-    <!-- Botón inferior dinámico -->
+    <!-- Botón inferior -->
     <div class="bottom-action">
         <button id="main-status-btn" class="status-btn waiting">
             Waiting for students (0/12)
         </button>
     </div>
 
-    <!-- MODAL: Controles de Narrativa (Oculto por defecto) -->
+    <!-- MODAL: Controles de Narrativa (Se mantiene igual) -->
     <div id="controls-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <button id="close-modal" class="close-btn">&times;</button>
-            <h2>Narrative Controls</h2>
-            <p class="modal-subtitle">Use these keyboard shortcuts to control narrative playback</p>
+            <h2 style="font-size: 20px; margin-bottom: 5px; color: black;">Narrative Controls</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">Use these keyboard shortcuts to control narrative playback</p>
             
-            <ul class="shortcuts-list">
-                <li><span class="key">Space</span> Pause/Resume narrative</li>
-                <li><span class="key">&rarr;</span> Advance 5 seconds</li>
-                <li><span class="key">&larr;</span> Go back 5 seconds</li>
-                <li><span class="key">F</span> Full screen</li>
-                <li><span class="key">🔊</span> Adjust volume</li>
-                <li><span class="key">M</span> Mute/Unmute audio</li>
-                <li><span class="key">ESC</span> Exit full screen</li>
+            <ul class="shortcuts-list" style="list-style: none; padding: 0; margin: 0 0 20px 0;">
+                <li style="margin-bottom: 12px; font-size: 14px;"><span class="key" style="background:#f4f4f4; border:1px solid #ddd; padding:2px 8px; border-radius:4px; font-weight:bold; margin-right:10px;">Space</span> Pause/Resume narrative</li>
+                <li style="margin-bottom: 12px; font-size: 14px;"><span class="key" style="background:#f4f4f4; border:1px solid #ddd; padding:2px 8px; border-radius:4px; font-weight:bold; margin-right:10px;">&rarr;</span> Advance 5 seconds</li>
+                <li style="margin-bottom: 12px; font-size: 14px;"><span class="key" style="background:#f4f4f4; border:1px solid #ddd; padding:2px 8px; border-radius:4px; font-weight:bold; margin-right:10px;">&larr;</span> Go back 5 seconds</li>
+                <li style="margin-bottom: 12px; font-size: 14px;"><span class="key" style="background:#f4f4f4; border:1px solid #ddd; padding:2px 8px; border-radius:4px; font-weight:bold; margin-right:10px;">F</span> Full screen</li>
+                <li style="margin-bottom: 12px; font-size: 14px;"><span class="key" style="background:#f4f4f4; border:1px solid #ddd; padding:2px 8px; border-radius:4px; font-weight:bold; margin-right:10px;">ESC</span> Exit full screen</li>
             </ul>
 
-            <div class="modal-footer">
-                <p><strong>Consejo</strong><br>Durante una sesión activa, estos controles estarán disponibles.</p>
+            <div style="background: #fdf5f5; border-left: 4px solid #d91f2b; padding: 10px 15px; font-size: 12px; color: #555;">
+                <p style="margin:0;"><strong>Consejo</strong><br>Durante una sesión activa, estos controles estarán disponibles.</p>
             </div>
         </div>
     </div>
