@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Serena | Sala de Espera</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="waiting-room-body">
+    
+    <!-- Barra superior -->
+    <nav class="top-nav">
+        <a href="#" class="back-link">&larr; Return to chapters</a>
+        <button id="btn-help" class="help-btn" aria-label="Controles">?</button>
+    </nav>
+
+    <main class="waiting-page">
+        <!-- Encabezado de la sesión -->
+        <header class="session-header">
+            <p class="subtitle">Connection Code</p>
+            <h1 class="code">12345</h1>
+            
+            <div class="badges">
+                <span class="badge grey">Waiting room</span>
+                <span class="badge grey">Chapter 1: Narrative 1</span>
+                <span class="badge red">Preparando sesión</span>
+            </div>
+        </header>
+
+        <!-- Lista de estudiantes -->
+        <section class="students-section">
+            <div class="students-header">
+                <h2>Students</h2>
+                <span id="ready-counter" class="counter">0/12 ready</span>
+            </div>
+            
+            <!-- Aquí JavaScript inyectará a los estudiantes -->
+            <div class="students-grid" id="students-grid">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Botón inferior dinámico -->
+    <div class="bottom-action">
+        <button id="main-status-btn" class="status-btn waiting">
+            Waiting for students (0/12)
+        </button>
+    </div>
+
+    <!-- MODAL: Controles de Narrativa (Oculto por defecto) -->
+    <div id="controls-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button id="close-modal" class="close-btn">&times;</button>
+            <h2>Narrative Controls</h2>
+            <p class="modal-subtitle">Use these keyboard shortcuts to control narrative playback</p>
+            
+            <ul class="shortcuts-list">
+                <li><span class="key">Space</span> Pause/Resume narrative</li>
+                <li><span class="key">&rarr;</span> Advance 5 seconds</li>
+                <li><span class="key">&larr;</span> Go back 5 seconds</li>
+                <li><span class="key">F</span> Full screen</li>
+                <li><span class="key">🔊</span> Adjust volume</li>
+                <li><span class="key">M</span> Mute/Unmute audio</li>
+                <li><span class="key">ESC</span> Exit full screen</li>
+            </ul>
+
+            <div class="modal-footer">
+                <p><strong>Consejo</strong><br>Durante una sesión activa, estos controles estarán disponibles.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="sala-espera.js"></script>
+</body>
+</html>
