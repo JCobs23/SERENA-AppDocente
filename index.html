@@ -1,59 +1,52 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Serena | Inicio de sesión</title>
-    <link rel="stylesheet" href="styles.css" />
-    <script src="login.js" defer></script>
-  </head>
-  <body>
-    <main class="login-page">
-      <section class="login" aria-labelledby="brand-title">
-        <header class="brand">
-          <h1 id="brand-title">Serena</h1>
-          <p>Aprendizaje Socioemocional</p>
-        </header>
 
-        <form class="login-card" id="login-form" novalidate>
-          <label for="email">Correo electrónico institucional</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autocomplete="username"
-            placeholder="profesor@escuela.edu"
-            maxlength="254"
-            required
-          />
-          <p class="field-error" id="email-error" aria-live="polite"></p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Serena | Inicio de sesión</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="login.js" defer></script>
+</head>
 
-          <label for="password">Contraseña</label>
-          <div class="password-wrap">
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              placeholder="Ingresa tu contraseña"
-              maxlength="128"
-              required
-            />
-            <button class="password-toggle" id="password-toggle" type="button" aria-label="Mostrar contraseña" aria-pressed="false">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-          <p class="field-error" id="password-error" aria-live="polite"></p>
+<body>
+  <main class="login-page">
+    <section class="login" aria-labelledby="brand-title">
+      <header class="brand">
+        <h1 id="brand-title">Serena</h1>
+        <p>Aprendizaje Socioemocional</p>
+      </header>
 
-          <button class="submit-button" id="submit-button" type="submit">
-            <span class="button-label">Iniciar sesión</span>
-            <span class="spinner" aria-hidden="true"></span>
+      <form class="login-card" id="login-form" novalidate>
+        <label for="email">Correo electrónico institucional</label>
+        <input id="email" name="email" type="email" autocomplete="username" placeholder="profesor@escuela.edu"
+          maxlength="254" required />
+        <p class="field-error" id="email-error" aria-live="polite"></p>
+
+        <label for="docenteId">ID de Docente</label>
+        <div class="password-wrap">
+          <input id="docenteId" name="docenteId" type="password" autocomplete="current-password" placeholder="123456"
+            maxlength="128" required />
+          <button class="password-toggle" id="password-toggle" type="button" aria-label="Mostrar contraseña"
+            aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
           </button>
-          <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
-          <p class="privacy-note">Tus credenciales se usan únicamente para validar tu acceso.</p>
-        </form>
-      </section>
-    </main>
-  </body>
+        </div>
+        <p class="field-error" id="docenteId-error" aria-live="polite"></p>
+
+        <button class="submit-button" id="submit-button" type="submit">
+          <span class="button-label">Iniciar sesión</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+        <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
+        <p class="privacy-note">Tus credenciales se usan únicamente para validar tu acceso.</p>
+      </form>
+    </section>
+  </main>
+</body>
+
 </html>
