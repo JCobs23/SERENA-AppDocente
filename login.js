@@ -1,6 +1,6 @@
 const form = document.querySelector('#login-form');
 const emailInput = document.querySelector('#email');
-const passwordInput = document.querySelector('#password');
+const passwordInput = document.querySelector('#docenteId');
 const toggleButton = document.querySelector('#password-toggle');
 const submitButton = document.querySelector('#submit-button');
 const formMessage = document.querySelector('#form-message');
@@ -23,7 +23,7 @@ function validate() {
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const gmailAddress = /^[^\s@]+@gmail\.com$/i.test(email);
   setFieldError(emailInput, !email ? 'Ingresa tu correo institucional.' : !validEmail ? 'Ingresa un correo electrónico válido.' : !gmailAddress ? 'Usa un correo que termine en @gmail.com.' : '');
-  setFieldError(passwordInput, !passwordInput.value ? 'Ingresa tu contraseña.' : '');
+  setFieldError(passwordInput, !passwordInput.value ? 'Ingresa tu ID de docente.' : '');
   return validEmail && gmailAddress && passwordInput.value.length > 0;
 }
 
@@ -43,7 +43,7 @@ form.addEventListener('submit', async (event) => {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       credentials: 'same-origin',
       cache: 'no-store',
-      body: JSON.stringify({ email: emailInput.value.trim(), password: passwordInput.value }),
+      body: JSON.stringify({ email: emailInput.value.trim(), docenteId: passwordInput.value }),
     });
 
     if (response.ok) {
