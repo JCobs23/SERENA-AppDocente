@@ -17,6 +17,7 @@ var apiContentRoot = File.Exists(Path.Combine(app.Environment.ContentRootPath, "
     : Path.Combine(app.Environment.ContentRootPath, "Serena.Api");
 var usersPath = Path.Combine(apiContentRoot, "Data", "teachers.json");
 var dummyCredential = new TeacherCredential("", "AAAAAAAAAAAAAAAAAAAAAA==", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 600_000);
+EnsureDefaultTeacher(usersPath);
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
@@ -227,6 +228,31 @@ static void RemoveInactiveStudents(ClassroomSession session, DateTimeOffset now)
     foreach (var pair in session.Students)
         if (now - pair.Value.LastSeenAt >= TimeSpan.FromSeconds(10))
             session.Students.TryRemove(pair.Key, out _);
+}
+
+static void EnsureDefaultTeacher(string path)
+{
+    const string defaultEmail = "docente@gmail.com";
+    // This is a PBKDF2 hash for the documented default password. The password is
+    // never stored in this file or in teachers.json as plain text.
+    var defaultTeacher = new TeacherCredential(
+        defaultEmail,
+        "Np7u16CMWTfgZvQ9/7F9Sw==",
+        "IAlqQAOzoU4RdBQ4YUe2eOtwIj39vQzTgm2QaSXyMtM=",
+        600_000);
+    var users = ReadTeacherUsers(path);
+    var existingIndex = users.FindIndex(user => string.Equals(user.Email, defaultEmail, StringComparison.OrdinalIgnoreCase));
+
+    if (existingIndex >= 0) users[existingIndex] = defaultTeacher;
+    else users.Add(defaultTeacher);
+
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    var json = JsonSerializer.Serialize(new TeacherStore(users), new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    });
+    File.WriteAllText(path, json);
 }
 static bool TryGetStudent(ConcurrentDictionary<string, ClassroomSession> sessions, string code, string studentId, TimeSpan lifetime, out ClassroomSession session, out StudentConnection student)
 {

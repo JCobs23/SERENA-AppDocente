@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 type CatalogScreenProps = {
   onNarrativeSelect: () => void
   teacherEmail: string
@@ -56,11 +58,25 @@ function UserIcon() {
   return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-4 w-4"><circle cx="12" cy="8" r="3" stroke="currentColor" strokeWidth="1.7" /><path d="M6.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
 }
 
-function NarrativeCover({ folder, title }: { folder: number; title: string }) {
-  return <img src={`/ImagenesCapitulos/Narrativa ${folder}/cover.jpg`} alt={`Portada de ${title}`} onError={(event) => { event.currentTarget.style.display = 'none' }} className="absolute inset-0 h-full w-full object-cover" />
+function NarrativeCover({ source, title }: { source?: string; title: string }) {
+  if (!source) return null
+  return <img src={source} alt={`Portada de ${title}`} onError={(event) => { event.currentTarget.style.display = 'none' }} className="absolute inset-0 h-full w-full object-cover" />
 }
 
 export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogout, isCreatingSession, sessionError }: CatalogScreenProps) {
+  const [covers, setCovers] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch(import.meta.env.VITE_MEDIA_SERVER_URL ?? 'http://localhost:3001/covers-manifest')
+      .then(async (response) => response.ok ? response.json() as Promise<{ covers: Record<string, string> }> : Promise.reject())
+      .then((manifest) => { if (!cancelled) setCovers(manifest.covers) })
+      .catch(() => { /* El catálogo conserva el fondo oscuro si no hay una portada disponible. */ })
+
+    return () => { cancelled = true }
+  }, [])
+
   return (
     <main className="min-h-screen bg-gray-50 text-gray-950">
       <header className="flex h-11 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
@@ -78,7 +94,7 @@ export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogou
               {chapter.narratives.map((narrative, narrativeIndex) => {
                 const globalNarrative = chapterIndex * 8 + narrativeIndex + 1
                 const isFirstNarrative = globalNarrative === 1
-                const card = <><div className="aspect-video bg-gray-800" /><NarrativeCover folder={globalNarrative} title={narrative.title} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pb-3 pt-10"><p className="text-xs font-semibold text-red-500">Capítulo {chapterIndex + 1}</p><p className="mt-1 text-sm font-bold leading-tight text-white">Narrativa {narrativeIndex + 1}: {narrative.title}</p></div></>
+                const card = <><div className="aspect-video bg-gray-800" /><NarrativeCover source={covers[String(chapterIndex + 1)]} title={narrative.title} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pb-3 pt-10"><p className="text-xs font-semibold text-red-500">Capítulo {chapterIndex + 1}</p><p className="mt-1 text-sm font-bold leading-tight text-white">Narrativa {narrativeIndex + 1}: {narrative.title}</p></div></>
                 return isFirstNarrative ? <button key={narrative.title} type="button" disabled={isCreatingSession} onClick={onNarrativeSelect} aria-busy={isCreatingSession} className="relative overflow-hidden rounded-xl text-left shadow-md transition duration-150 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">{card}</button> : <article key={narrative.title} className="relative overflow-hidden rounded-xl shadow-md">{card}</article>
               })}
             </div>

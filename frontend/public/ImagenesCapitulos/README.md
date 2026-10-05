@@ -1,9 +1,9 @@
-# Portadas de las narrativas
+# Portadas de los capítulos
 
-Cada narrativa usa una portada ubicada en su carpeta correspondiente:
+Cada capítulo usa una portada ubicada en su carpeta correspondiente. Esa portada se aplica automáticamente a todas las narrativas de ese capítulo:
 
-`ImagenesCapitulos/Narrativa N/cover.jpg`
+`ImagenesCapitulos/Capitulo N/`
 
-Por ejemplo, la primera tarjeta usa `ImagenesCapitulos/Narrativa 1/cover.jpg` y la narrativa 80 usa `ImagenesCapitulos/Narrativa 80/cover.jpg`.
+Por ejemplo, una imagen llamada `aula-compasiva.webp` dentro de `ImagenesCapitulos/Capitulo 1/` se mostrará en las ocho tarjetas del capítulo 1.
 
-Usa el nombre exacto `cover.jpg` para que el catálogo la cargue automáticamente. Mientras una portada no exista, el catálogo mostrará el fondo oscuro de reserva.
+El nombre es libre. Se admite una imagen `.avif`, `.gif`, `.jpeg`, `.jpg`, `.png` o `.webp` por carpeta. Si hay varias, se usa la primera por orden alfabético. Mientras una portada no exista, el catálogo mostrará el fondo oscuro de reserva.
