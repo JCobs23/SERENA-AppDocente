@@ -93,7 +93,19 @@ app.MapGet("/api/sessions/{code}", (string code) =>
 {
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
-    return Results.Ok(new { code = session.Code, active = true });
+    return Results.Ok(new { code = session.Code, active = true, narrativeStarted = session.NarrativeStarted });
+});
+
+app.MapPost("/api/sessions/{code}/narrative/start", (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+
+    session.NarrativeStarted = true;
+    return Results.Ok(new { started = true });
 });
 
 app.MapPost("/api/sessions/{code}/students", (string code, JoinRequest request) =>
@@ -103,9 +115,40 @@ app.MapPost("/api/sessions/{code}/students", (string code, JoinRequest request) 
     var name = (request.Name ?? string.Empty).Trim();
     if (name.Length is < 2 or > 60)
         return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = ["Name must contain between 2 and 60 characters."] });
+    // Each join receives its own identifier. That intentionally allows the same
+    // person (or display name) to join a session more than once.
     var studentId = Guid.NewGuid().ToString("N");
-    session.Students[studentId] = name;
+    session.Students[studentId] = new StudentConnection(name, false, DateTimeOffset.UtcNow);
     return Results.Ok(new { studentId, sessionCode = code, joined = true });
+});
+
+app.MapPost("/api/sessions/{code}/students/{studentId}/heartbeat", (string code, string studentId) =>
+{
+    if (!TryGetStudent(sessions, code, studentId, sessionLifetime, out var session, out var student))
+        return Results.NotFound(new { message = "Student session does not exist or has expired." });
+
+    session.Students[studentId] = student with { LastSeenAt = DateTimeOffset.UtcNow };
+    return Results.NoContent();
+});
+
+app.MapPost("/api/sessions/{code}/students/{studentId}/ready", (string code, string studentId, ReadyRequest request) =>
+{
+    if (!TryGetStudent(sessions, code, studentId, sessionLifetime, out var session, out var student))
+        return Results.NotFound(new { message = "Student session does not exist or has expired." });
+
+    // A readiness update is also proof that Unity is still connected.
+    session.Students[studentId] = student with { Ready = request.Ready, LastSeenAt = DateTimeOffset.UtcNow };
+    return Results.NoContent();
+});
+
+app.MapPost("/api/sessions/{code}/students/{studentId}/disconnect", (string code, string studentId) =>
+{
+    if (!TryGetStudent(sessions, code, studentId, sessionLifetime, out var session, out var student))
+        return Results.NotFound(new { message = "Student session does not exist or has expired." });
+
+    // Used by OnApplicationQuit. Unexpected closes are handled by heartbeat expiry.
+    session.Students[studentId] = student with { LastSeenAt = DateTimeOffset.MinValue };
+    return Results.NoContent();
 });
 
 app.MapGet("/api/sessions/{code}/students", (HttpContext context, string code) =>
@@ -116,7 +159,19 @@ app.MapGet("/api/sessions/{code}/students", (HttpContext context, string code) =
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
     context.Response.Headers.CacheControl = "no-store";
-    return Results.Ok(new { count = session.Students.Count, students = session.Students.Select(pair => new { id = pair.Key, name = pair.Value }) });
+    var now = DateTimeOffset.UtcNow;
+    RemoveInactiveStudents(session, now);
+    return Results.Ok(new
+    {
+        count = session.Students.Count,
+        students = session.Students.Select(pair => new
+        {
+            id = pair.Key,
+            name = pair.Value.Name,
+            ready = pair.Value.Ready,
+            connected = IsStudentConnected(pair.Value, now)
+        })
+    });
 });
 
 app.Run();
@@ -166,6 +221,23 @@ static bool TryGetTeacher(HttpContext context, ConcurrentDictionary<string, Teac
 
 static bool IsSessionCode(string code) => code.Length == 6 && code.All(char.IsAsciiDigit);
 static bool IsExpired(ClassroomSession session, TimeSpan lifetime) => DateTimeOffset.UtcNow - session.CreatedAt > lifetime;
+static bool IsStudentConnected(StudentConnection student, DateTimeOffset now) => now - student.LastSeenAt <= TimeSpan.FromSeconds(8);
+static void RemoveInactiveStudents(ClassroomSession session, DateTimeOffset now)
+{
+    foreach (var pair in session.Students)
+        if (now - pair.Value.LastSeenAt >= TimeSpan.FromSeconds(10))
+            session.Students.TryRemove(pair.Key, out _);
+}
+static bool TryGetStudent(ConcurrentDictionary<string, ClassroomSession> sessions, string code, string studentId, TimeSpan lifetime, out ClassroomSession session, out StudentConnection student)
+{
+    session = null!;
+    student = null!;
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var foundSession) || IsExpired(foundSession, lifetime)
+        || !foundSession.Students.TryGetValue(studentId, out var foundStudent)) return false;
+    session = foundSession;
+    student = foundStudent;
+    return true;
+}
 static void CleanupExpiredSessions(ConcurrentDictionary<string, ClassroomSession> sessions, TimeSpan lifetime)
 {
     foreach (var pair in sessions)
@@ -178,11 +250,14 @@ sealed record TeacherSession(string Email, DateTimeOffset ExpiresAt);
 sealed record LoginAttemptWindow(DateTimeOffset StartedAt, int Count);
 sealed record LoginRequest(string? Email, string? Password);
 sealed record JoinRequest(string? Name);
+sealed record ReadyRequest(bool Ready);
+sealed record StudentConnection(string Name, bool Ready, DateTimeOffset LastSeenAt);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
     public string Code { get; } = code;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public string TeacherEmail { get; } = teacherEmail;
-    public ConcurrentDictionary<string, string> Students { get; } = new();
+    public bool NarrativeStarted { get; set; }
+    public ConcurrentDictionary<string, StudentConnection> Students { get; } = new();
 }
