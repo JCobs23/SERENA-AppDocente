@@ -4,3 +4,27 @@ Serena.Api/build-*/
 Serena.Api/Data/teachers.json
 .dotnet-cli/
 UnityIntegration/
+
+# Visual Studio / IDE
+.vs/
+*.user
+*.suo
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Node dependencies and logs
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend and launcher build output
+dist/
+**/publish/
+
+# Local environment files
+.env
+.env.*
+!.env.example

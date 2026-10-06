@@ -175,6 +175,28 @@ app.MapGet("/api/sessions/{code}/students", (HttpContext context, string code) =
     });
 });
 
+// Unity uses this read-only roster endpoint to show the students in the same
+// classroom. The session code is the access key; no teacher cookie is needed.
+app.MapGet("/api/sessions/{code}/students/roster", (string code) =>
+{
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+
+    var now = DateTimeOffset.UtcNow;
+    RemoveInactiveStudents(session, now);
+    return Results.Ok(new
+    {
+        count = session.Students.Count,
+        students = session.Students.Select(pair => new
+        {
+            id = pair.Key,
+            name = pair.Value.Name,
+            ready = pair.Value.Ready,
+            connected = IsStudentConnected(pair.Value, now)
+        })
+    });
+});
+
 app.Run();
 
 static List<TeacherCredential> ReadTeacherUsers(string path)
