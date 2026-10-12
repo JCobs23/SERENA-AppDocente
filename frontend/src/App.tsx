@@ -3,13 +3,14 @@ import { apiRequest, ApiError } from './lib/api'
 import CatalogScreen from './components/CatalogScreen'
 import LoginScreen from './components/LoginScreen'
 import WaitingRoom from './components/WaitingRoom'
+import ProjectionScreen from './components/ProjectionScreen'
 import WelcomeScreen from './components/WelcomeScreen'
 
 type Screen = 'checking-session' | 'login' | 'welcome' | 'catalog' | 'waiting-room'
 type Teacher = { email: string }
 type NewSession = { code: string }
 
-export default function App() {
+function TeacherApp() {
   const [screen, setScreen] = useState<Screen>('checking-session')
   const [teacherEmail, setTeacherEmail] = useState('')
   const [sessionCode, setSessionCode] = useState('')
@@ -76,4 +77,8 @@ export default function App() {
   }
 
   return <WelcomeScreen onContinue={() => setScreen('catalog')} />
+}
+export default function App() {
+  const match = window.location.pathname.match(/^\/projection\/(\d{6})\/?$/)
+  return match ? <ProjectionScreen sessionCode={match[1]} /> : <TeacherApp />
 }
