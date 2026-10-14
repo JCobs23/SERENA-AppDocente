@@ -11,6 +11,7 @@ export default defineConfig({
         target: 'https://localhost:5081',
         changeOrigin: true,
         secure: false,
+        ws: true,
       },
       '/covers-manifest': {
         target: 'http://localhost:3001',
