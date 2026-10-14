@@ -1,24 +1,19 @@
 # Flujo de seguridad del inicio de sesión
 
-## Flujo previsto
+## Flujo implementado
 
-1. El docente ingresa su correo institucional y contraseña en el formulario. El campo de contraseña usa `type="password"`, por lo que el navegador muestra puntos o asteriscos según el sistema. El botón de ojo permite revelar u ocultar el valor de forma voluntaria.
-2. El navegador valida que el correo tenga un formato válido y que la contraseña no esté vacía.
-3. El formulario envía un `POST` JSON a `/api/auth/login`. En despliegue, esta ruta debe servirse exclusivamente por HTTPS (también dentro de la LAN) para cifrar el tránsito mediante TLS. No se debe implementar cifrado casero en el frontend.
-4. El servidor valida la credencial contra un hash de contraseña con sal usando un algoritmo adaptativo (por ejemplo, Argon2id, bcrypt o PBKDF2), aplica límites de intentos y devuelve errores genéricos para credenciales inválidas.
-5. Tras autenticar, el servidor crea una sesión protegida mediante cookie `HttpOnly`, `Secure` y `SameSite` apropiado. No devolver ni guardar tokens de sesión en `localStorage`.
-6. El servidor y el cliente nunca registran contraseñas, cuerpos de autenticación, cookies ni tokens. Los registros deben limitarse a eventos operativos, códigos de estado y un identificador de correlación no sensible.
+1. El docente usa el formulario React/Vite; la contraseña se oculta con `type="password"` y el navegador valida los campos obligatorios.
+2. `LoginScreen` envía un `POST` JSON a `/api/auth/login`. Las credenciales no se incluyen en la URL, no se registran en consola y no se guardan en `localStorage`.
+3. ASP.NET Core verifica la contraseña contra `Serena.Api/Data/teachers.json` mediante PBKDF2-HMAC-SHA256, con sal aleatoria, 600.000 iteraciones y comparación en tiempo constante. El JSON no guarda contraseñas en texto plano y está excluido de Git.
+4. Con credenciales válidas, el servidor crea una cookie de sesión aleatoria con `HttpOnly`, `Secure`, `SameSite=Strict` y vencimiento de ocho horas. El token no se expone a JavaScript y se invalida al cerrar sesión.
+5. Los endpoints docentes requieren HTTPS y una cookie válida. Los errores no distinguen entre un correo inexistente y una contraseña errónea; el servidor limita los intentos por IP.
 
-## Protección incluida en este prototipo
+## Desarrollo y despliegue
 
-- Contraseña enmascarada por defecto y control accesible para mostrarla u ocultarla.
-- Envío `POST`, sin credenciales en URL o query string.
-- El cliente no imprime credenciales en consola y no las persiste en almacenamiento web.
-- Mensajes de error genéricos, campos con límites de longitud y validación básica.
-- Petición sin caché y estado de carga para evitar envíos repetidos.
+Prepara el certificado local con `dotnet dev-certs https --trust`. El proxy Vite de desarrollo usa el certificado autofirmado de `https://localhost:5081`; esa configuración solo es apropiada para localhost. En producción se requiere HTTPS de extremo a extremo, con un certificado válido y un proxy que lo verifique.
 
-## Pendiente en el servidor/despliegue
+La API de Unity continúa usando HTTP en el puerto 5080 y las sesiones están en memoria. No usar el sistema con información real del aula hasta migrar ese tramo a HTTPS y persistencia protegida.
 
-Este repositorio contiene únicamente el prototipo frontend; `/api/auth/login` aún requiere un backend real. Antes de usarlo con cuentas reales, el equipo debe implementar autenticación, TLS/HTTPS, cookies seguras, almacenamiento de hashes, protección CSRF según el mecanismo de sesión, límites de intentos, expiración y cierre de sesión. No desplegar credenciales reales sobre HTTP: `type="password"` solo oculta lo que se ve en pantalla y no cifra la comunicación.
+## Verificación de registros
 
-Para verificar registros, probar en navegador y servidor con credenciales ficticias y revisar que ningún logger registre el cuerpo del `POST`, valores del formulario, cookies o tokens. Evitar capturas HAR con datos reales.
+No se deben registrar cuerpos de solicitudes, contraseñas, cookies ni tokens. Para comprobarlo, usa una cuenta ficticia e inspecciona los registros del navegador, ASP.NET Core y Node; la contraseña de prueba no debe aparecer. No compartas archivos HAR que contengan credenciales.
