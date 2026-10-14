@@ -59,6 +59,8 @@ npm.cmd --prefix backend run dev
 npm.cmd --prefix frontend run dev
 ```
 
+El backend Node también lee las imágenes de `frontend/public/ImagenesCapitulos/Capitulo N/`: al agregar o sustituir una imagen compatible dentro de una de esas diez carpetas, se aplicará como portada de las ocho narrativas del capítulo. No es necesario usar un nombre específico para el archivo.
+
 Abre la dirección que Vite muestra, normalmente `http://localhost:5173`. La configuración Vite reenvía `/api` a la API HTTPS local. Ese proxy es solo para desarrollo en el mismo computador; la API recibe las credenciales cifradas por TLS. No expongas el servidor Vite en la red del aula.
 
 Si algún puerto aparece ocupado, detén la instancia vieja con `Ctrl+C` en su terminal antes de volver a iniciar.

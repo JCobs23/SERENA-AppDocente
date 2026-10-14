@@ -69,7 +69,9 @@ export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogou
   useEffect(() => {
     let cancelled = false
 
-    fetch(import.meta.env.VITE_MEDIA_SERVER_URL ?? 'http://localhost:3001/covers-manifest')
+    // En desarrollo Vite redirige esta ruta al servidor de portadas. Así el
+    // catálogo también funciona si Vite elige un puerto distinto de 5173.
+    fetch(import.meta.env.VITE_MEDIA_SERVER_URL ?? '/covers-manifest')
       .then(async (response) => response.ok ? response.json() as Promise<{ covers: Record<string, string> }> : Promise.reject())
       .then((manifest) => { if (!cancelled) setCovers(manifest.covers) })
       .catch(() => { /* El catálogo conserva el fondo oscuro si no hay una portada disponible. */ })
