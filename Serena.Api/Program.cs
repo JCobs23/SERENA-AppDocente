@@ -212,6 +212,20 @@ app.MapPost("/api/sessions/{code}/start", async (HttpContext context, string cod
     return Results.Ok(state);
 });
 
+app.MapPost("/api/sessions/{code}/reset", async (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+
+    session.ResetNarrative();
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
+});
+
 app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string code, StageChangeRequest request) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
@@ -366,6 +380,17 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             narrativeStarted = true;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             currentStage = 0;
+            revision++;
+        }
+    }
+
+    public void ResetNarrative()
+    {
+        lock (stateGate)
+        {
+            narrativeStarted = false;
+            currentStage = 0;
+            foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             revision++;
         }
     }
