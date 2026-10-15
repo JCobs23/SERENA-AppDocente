@@ -30,7 +30,26 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const [isSkippingIntro, setIsSkippingIntro] = useState(false)
   const [isControllingMedia, setIsControllingMedia] = useState(false)
   const [isReturning, setIsReturning] = useState(false)
+  const [mediaDuration, setMediaDuration] = useState(0)
   const introPending = state.connectedStudents === 0 || state.introCompletedStudents < state.connectedStudents
+
+  useEffect(() => {
+    let active = true
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = '/videos/narrativa-inicial.mp4'
+    const readDuration = () => {
+      if (active && Number.isFinite(video.duration)) setMediaDuration(video.duration)
+    }
+    video.addEventListener('loadedmetadata', readDuration)
+    video.load()
+    return () => {
+      active = false
+      video.removeEventListener('loadedmetadata', readDuration)
+      video.removeAttribute('src')
+      video.load()
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -109,8 +128,12 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
       setIsControllingMedia(false)
     }
   }
-  const mediaTime = Math.max(0, Math.floor(state.mediaPositionSeconds || 0))
+  const mediaDurationSeconds = Math.max(0, Math.floor(mediaDuration))
+  const reportedMediaTime = Math.max(0, Math.floor(state.mediaPositionSeconds || 0))
+  const mediaTime = mediaDurationSeconds > 0 ? Math.min(reportedMediaTime, mediaDurationSeconds) : reportedMediaTime
   const mediaTimeLabel = `${Math.floor(mediaTime / 60).toString().padStart(2, '0')}:${(mediaTime % 60).toString().padStart(2, '0')}`
+  const mediaDurationLabel = `${Math.floor(mediaDurationSeconds / 60).toString().padStart(2, '0')}:${(mediaDurationSeconds % 60).toString().padStart(2, '0')}`
+  const mediaProgress = mediaDuration > 0 ? Math.min(100, (state.mediaPositionSeconds / mediaDuration) * 100) : 0
 
   async function returnToChapters() {
     setIsReturning(true)
@@ -176,7 +199,15 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Atrasar cinco segundos">−5 s</button>
               <button type="button" onClick={() => void controlMedia(state.mediaPaused ? 'play' : 'pause')} disabled={isControllingMedia} className="min-w-40 rounded-lg bg-red-600 px-5 py-3 font-semibold hover:bg-red-700 disabled:opacity-50">{state.mediaPaused ? 'Reanudar' : 'Pausar'}</button>
               <button type="button" onClick={() => void controlMedia('forward-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Adelantar cinco segundos">+5 s</button>
-              <span className="w-full text-center text-sm tabular-nums text-white/70" aria-live="polite">{mediaTimeLabel}</span>
+              <div className="w-full space-y-1 px-1" aria-label="Progreso del video de la narrativa">
+                <div role="progressbar" aria-label="Progreso del video" aria-valuemin={0} aria-valuemax={mediaDurationSeconds || undefined} aria-valuenow={Math.min(mediaTime, mediaDurationSeconds || mediaTime)} className="h-2 overflow-hidden rounded-full bg-white/20">
+                  <div className="h-full rounded-full bg-red-500 transition-[width] duration-300" style={{ width: `${mediaProgress}%` }} />
+                </div>
+                <div className="flex justify-between text-sm tabular-nums text-white/75" aria-live="polite">
+                  <span>{mediaTimeLabel}</span>
+                  <span>{mediaDuration > 0 ? mediaDurationLabel : '--:--'}</span>
+                </div>
+              </div>
             </div>
           )}
           <nav aria-label="Controles de avance de la narrativa" className="mx-auto mt-5 flex w-full max-w-2xl gap-3">
