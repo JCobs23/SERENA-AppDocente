@@ -12,7 +12,7 @@ type NarrativeState = {
   connectedStudents: number
   readyStudents: number
 }
-type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => void }
+type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => Promise<void> }
 
 const initialNarrativeState: NarrativeState = {
   narrativeStarted: false, stage: 0, stageLabel: 'En espera',
@@ -66,6 +66,8 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isControlsOpen, setIsControlsOpen] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
+  const [isSkippingIntro, setIsSkippingIntro] = useState(false)
+  const [isReturning, setIsReturning] = useState(false)
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
@@ -138,13 +140,46 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     }
   }
 
+  async function skipIntroduction() {
+    setIsSkippingIntro(true)
+    setActionError('')
+    try {
+      const state = await apiRequest<NarrativeState>('/sessions/' + sessionCode + '/skip-intro', { method: 'POST' })
+      setNarrativeState(state)
+    } catch (error) {
+      setActionError(error instanceof ApiError
+        ? error.status === 404
+          ? 'Serena.Api aún no tiene activa la ruta para omitir. Reinicia la API; esto borrará las sesiones actuales.'
+          : error.status === 409
+            ? 'La introducción ya terminó o no hay estudiantes conectados.'
+            : error.status === 401
+              ? 'La sesión docente expiró. Inicia sesión de nuevo.'
+              : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.'
+        : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.')
+    } finally {
+      setIsSkippingIntro(false)
+    }
+  }
+
+  async function returnToChapters() {
+    setIsReturning(true)
+    setActionError('')
+    try { await onReturnToChapters() }
+    catch (error) {
+      setActionError(error instanceof ApiError && error.status === 404
+        ? 'La API no reconoce la orden de detener la narrativa. Reinicia Serena.Api e inténtalo de nuevo.'
+        : 'No se pudo detener la narrativa. Verifica la sesión y la conexión e inténtalo de nuevo.')
+    }
+    finally { setIsReturning(false) }
+  }
+
 
   const connectionCode = sessionCode.match(/.{1,3}/g)?.join(' ') ?? sessionCode
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
-        <button type="button" onClick={onReturnToChapters} className="text-sm font-medium text-gray-800 hover:text-red-700">← Volver a capítulos</button>
+        <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a capítulos'}</button>
         <div className="flex items-center gap-3">
           <button type="button" onClick={onLogout} className="text-sm font-medium text-gray-600 hover:text-red-700">Cerrar sesión</button>
           <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="Ver controles de teclado" aria-expanded={isControlsOpen} title="Ver controles de teclado" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>
@@ -204,6 +239,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             </div>
             <p className="mt-3 text-sm text-gray-600">{narrativeState.stageDescription}</p>
             <p className="mt-2 text-sm text-gray-600">Introducción terminada en tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
+            {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Omitiendo introducción…' : 'Omitir introducción'}</button>}
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
         )}
