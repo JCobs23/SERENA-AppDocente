@@ -1,0 +1,10 @@
+{
+    "users":  [
+                  {
+                      "email":  "profesor@gmail.com",
+                      "salt":  "t4H0ZMmxRmZBAIjoTIcQAg==",
+                      "passwordHash":  "yTBQV7WXpfRo15/ZJBDD0Yi79zvZsLhkq26HuBdtvdA=",
+                      "iterations":  600000
+                  }
+              ]
+}
