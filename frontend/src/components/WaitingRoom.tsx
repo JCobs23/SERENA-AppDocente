@@ -66,6 +66,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isControlsOpen, setIsControlsOpen] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
+  const [isSkippingIntro, setIsSkippingIntro] = useState(false)
   const [isReturning, setIsReturning] = useState(false)
 
   const [actionError, setActionError] = useState('')
@@ -136,6 +137,27 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         : 'No se pudo iniciar la narrativa. Revisa la conexión con el servidor.')
     } finally {
       setIsStarting(false)
+    }
+  }
+
+  async function skipIntroduction() {
+    setIsSkippingIntro(true)
+    setActionError('')
+    try {
+      const state = await apiRequest<NarrativeState>('/sessions/' + sessionCode + '/skip-intro', { method: 'POST' })
+      setNarrativeState(state)
+    } catch (error) {
+      setActionError(error instanceof ApiError
+        ? error.status === 404
+          ? 'Serena.Api aún no tiene activa la ruta para omitir. Reinicia la API; esto borrará las sesiones actuales.'
+          : error.status === 409
+            ? 'La introducción ya terminó o no hay estudiantes conectados.'
+            : error.status === 401
+              ? 'La sesión docente expiró. Inicia sesión de nuevo.'
+              : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.'
+        : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.')
+    } finally {
+      setIsSkippingIntro(false)
     }
   }
 
@@ -217,6 +239,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             </div>
             <p className="mt-3 text-sm text-gray-600">{narrativeState.stageDescription}</p>
             <p className="mt-2 text-sm text-gray-600">Introducción terminada en tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
+            {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Omitiendo introducción…' : 'Omitir introducción'}</button>}
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
         )}
