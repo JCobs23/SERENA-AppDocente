@@ -23,7 +23,7 @@ function TeacherApp() {
       .then((teacher) => {
         if (!isMounted) return
         setTeacherEmail(teacher.email)
-        setScreen('welcome')
+        setScreen(new URLSearchParams(window.location.search).get('screen') === 'catalog' ? 'catalog' : 'welcome')
       })
       .catch(() => { if (isMounted) setScreen('login') })
     return () => { isMounted = false }
@@ -52,6 +52,11 @@ function TeacherApp() {
     setScreen('login')
   }
 
+  async function returnToChapters() {
+    await apiRequest<void>('/sessions/' + sessionCode + '/reset', { method: 'POST' })
+    setScreen('catalog')
+  }
+
   if (screen === 'checking-session') {
     return <main className="grid min-h-screen place-items-center text-sm text-gray-500">Cargando Serena…</main>
   }
@@ -73,7 +78,7 @@ function TeacherApp() {
   }
 
   if (screen === 'waiting-room') {
-    return <WaitingRoom sessionCode={sessionCode} onLogout={logout} onReturnToChapters={() => setScreen('catalog')} />
+    return <WaitingRoom sessionCode={sessionCode} onLogout={logout} onReturnToChapters={returnToChapters} />
   }
 
   return <WelcomeScreen onContinue={() => setScreen('catalog')} />
