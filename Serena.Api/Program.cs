@@ -27,11 +27,13 @@ var narrativeStages = new[]
 NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
 {
     var state = classroom.GetNarrativeState();
+    var media = classroom.GetMediaState();
     var stage = state.Started && state.Stage == 0
         ? (Title: "Introducción", Description: "Mira el video introductorio antes de comenzar la narrativa.")
         : narrativeStages[state.Stage];
     return new NarrativeClientState(
         state.Started, state.Stage, stage.Title, stage.Description, state.Revision,
+        media.Paused, media.PositionSeconds, media.Revision, media.Command,
         classroom.Presence.Values.Count(student => student.IsConnected),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsReady),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted)
@@ -128,6 +130,10 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.StageLabel,
         narrativeState.StageDescription,
         narrativeState.Revision,
+        narrativeState.MediaPaused,
+        narrativeState.MediaPositionSeconds,
+        narrativeState.MediaRevision,
+        narrativeState.MediaCommand,
         narrativeState.ConnectedStudents,
         narrativeState.ReadyStudents,
         narrativeState.IntroCompletedStudents
@@ -226,6 +232,22 @@ app.MapPost("/api/sessions/{code}/reset", async (HttpContext context, string cod
     return Results.Ok(state);
 });
 
+app.MapPost("/api/sessions/{code}/skip-intro", async (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+
+    if (!session.SkipIntroduction())
+        return Results.Conflict(new { message = "The introduction is not active or no students are connected." });
+
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
+});
+
 app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string code, StageChangeRequest request) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
@@ -245,6 +267,20 @@ app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string cod
     if (session.ChangeStage(request.Direction, narrativeStages.Length - 1))
         await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
     return Results.Ok(BuildNarrativeState(session));
+});
+app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string code, MediaControlRequest request) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    if (!session.ControlNarrativeMedia(request.Action ?? string.Empty))
+        return Results.Conflict(new { message = "Media controls are available only during stage 1." });
+
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
 });
 app.MapMethods("/api/sessions/{code}/stream", ["GET"], async (HttpContext context, string code) =>
 {
@@ -352,7 +388,8 @@ sealed record LoginRequest(string? Email, string? Password);
 sealed record JoinRequest(string? Name, string? StudentId = null);
 sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents);
+sealed record MediaControlRequest(string? Action);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
@@ -360,6 +397,11 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     private bool narrativeStarted;
     private int currentStage;
     private int revision;
+    private bool mediaPaused = true;
+    private double mediaPositionSeconds;
+    private DateTimeOffset mediaUpdatedAt = DateTimeOffset.UtcNow;
+    private int mediaRevision;
+    private string mediaCommand = "pause";
 
     public string Code { get; } = code;
     public DateTimeOffset CreatedAt { get; } = createdAt;
@@ -372,6 +414,15 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         lock (stateGate) return (narrativeStarted, currentStage, revision);
     }
 
+    public (bool Paused, double PositionSeconds, int Revision, string Command) GetMediaState()
+    {
+        lock (stateGate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return (mediaPaused, GetMediaPosition(now), mediaRevision, mediaCommand);
+        }
+    }
+
     public void StartNarrative()
     {
         lock (stateGate)
@@ -380,6 +431,11 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             narrativeStarted = true;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             currentStage = 0;
+            mediaPositionSeconds = 0;
+            mediaPaused = true;
+            mediaCommand = "pause";
+            mediaUpdatedAt = DateTimeOffset.UtcNow;
+            mediaRevision++;
             revision++;
         }
     }
@@ -390,6 +446,11 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             narrativeStarted = false;
             currentStage = 0;
+            mediaPositionSeconds = 0;
+            mediaPaused = true;
+            mediaCommand = "pause";
+            mediaUpdatedAt = DateTimeOffset.UtcNow;
+            mediaRevision++;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             revision++;
         }
@@ -403,6 +464,22 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             var connectedStudents = Presence.Values.Where(student => student.IsConnected).ToArray();
             if (connectedStudents.Length == 0 || connectedStudents.Any(student => !student.IsIntroCompleted)) return false;
             currentStage = 1;
+            StartMediaFromBeginning();
+            revision++;
+            return true;
+        }
+    }
+
+    public bool SkipIntroduction()
+    {
+        lock (stateGate)
+        {
+            if (!narrativeStarted || currentStage != 0) return false;
+            var connectedStudents = Presence.Values.Where(student => student.IsConnected).ToArray();
+            if (connectedStudents.Length == 0) return false;
+            foreach (var student in connectedStudents) student.SetIntroCompleted(true);
+            currentStage = 1;
+            StartMediaFromBeginning();
             revision++;
             return true;
         }
@@ -414,10 +491,72 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             var nextStage = Math.Clamp(currentStage + direction, 1, maxStage);
             if (nextStage == currentStage) return false;
+            if (nextStage == 1)
+                StartMediaFromBeginning();
+            else if (currentStage == 1)
+                PauseMedia();
             currentStage = nextStage;
             revision++;
             return true;
         }
+    }
+
+    public bool ControlNarrativeMedia(string action)
+    {
+        lock (stateGate)
+        {
+            if (!narrativeStarted || currentStage != 1) return false;
+            var now = DateTimeOffset.UtcNow;
+            var currentPosition = GetMediaPosition(now);
+            switch (action)
+            {
+                case "pause":
+                    mediaPositionSeconds = currentPosition;
+                    mediaPaused = true;
+                    mediaCommand = "pause";
+                    break;
+                case "play":
+                    mediaPositionSeconds = currentPosition;
+                    mediaPaused = false;
+                    mediaCommand = "play";
+                    break;
+                case "back-5":
+                    mediaPositionSeconds = Math.Max(0, currentPosition - 5);
+                    mediaCommand = "back-5";
+                    break;
+                case "forward-5":
+                    mediaPositionSeconds = currentPosition + 5;
+                    mediaCommand = "forward-5";
+                    break;
+                default:
+                    return false;
+            }
+            mediaUpdatedAt = now;
+            mediaRevision++;
+            return true;
+        }
+    }
+
+    private double GetMediaPosition(DateTimeOffset now) => mediaPositionSeconds
+        + (mediaPaused ? 0 : Math.Max(0, (now - mediaUpdatedAt).TotalSeconds));
+
+    private void StartMediaFromBeginning()
+    {
+        mediaPositionSeconds = 0;
+        mediaPaused = false;
+        mediaCommand = "restart";
+        mediaUpdatedAt = DateTimeOffset.UtcNow;
+        mediaRevision++;
+    }
+
+    private void PauseMedia()
+    {
+        var now = DateTimeOffset.UtcNow;
+        mediaPositionSeconds = GetMediaPosition(now);
+        mediaPaused = true;
+        mediaCommand = "pause";
+        mediaUpdatedAt = now;
+        mediaRevision++;
     }
 
     public async Task BroadcastStudentAsync(string eventType, StudentPresence student)
