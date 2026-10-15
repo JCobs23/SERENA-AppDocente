@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiRequest, ApiError } from '../lib/api'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
+type StudentInteraction = { studentId: string; studentName: string; emotion: string | null; decision: string | null; connected: boolean; ready: boolean }
 type NarrativeState = {
   narrativeStarted: boolean
   stage: number
@@ -68,21 +69,36 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isStarting, setIsStarting] = useState(false)
   const [isSkippingIntro, setIsSkippingIntro] = useState(false)
   const [isReturning, setIsReturning] = useState(false)
+  const [studentInteractions, setStudentInteractions] = useState<StudentInteraction[]>([])
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
   const connectedStudents = students.filter((student) => student.connected).length
   const readyStudents = students.filter((student) => student.connected && student.ready).length
+  const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 3 ? 'decision' : null
+  const interactionTitle = currentInteraction === 'emotion' ? 'Emociones registradas' : 'Decisiones registradas'
+  const activeInteractions = studentInteractions.filter((student) => student.connected)
+  const responseCounts = activeInteractions.reduce<Record<string, number>>((counts, student) => {
+    const value = currentInteraction ? student[currentInteraction] : null
+    if (value) counts[value] = (counts[value] ?? 0) + 1
+    return counts
+  }, {})
 
   useEffect(() => {
     let disposed = false
     let retryTimer = 0
     let stream: WebSocket | null = null
+    const refreshInteractions = async () => {
+      try {
+        const current = await apiRequest<StudentInteraction[]>('/sessions/' + sessionCode + '/interactions')
+        if (!disposed) setStudentInteractions(current)
+      } catch { /* Mantiene los últimos datos recibidos si no se puede actualizar. */ }
+    }
     const connect = () => {
       if (disposed) return
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       stream = new WebSocket(protocol + '//' + window.location.host + '/api/sessions/' + sessionCode + '/stream')
-      stream.onopen = () => setIsLive(true)
+      stream.onopen = () => { setIsLive(true); void refreshInteractions() }
       stream.onmessage = (message) => {
         try {
           const payload = JSON.parse(message.data) as {
@@ -93,6 +109,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
           }
           if (payload.type === 'snapshot' && payload.students) setStudents(payload.students)
           if (payload.type === 'student-status' && payload.student) {
+            void refreshInteractions()
             setStudents((current) => {
               const index = current.findIndex((student) => student.id === payload.student!.id)
               if (index < 0) return [...current, payload.student!]
@@ -101,7 +118,10 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
               return updated
             })
           }
-          if (payload.type === 'narrative-state' && payload.state) setNarrativeState(payload.state)
+          if (payload.type === 'narrative-state' && payload.state) {
+            setNarrativeState(payload.state)
+            void refreshInteractions()
+          }
         } catch { /* Conserva el último estado válido. */ }
       }
       stream.onclose = () => {
@@ -241,6 +261,27 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             <p className="mt-2 text-sm text-gray-600">Introducción terminada en tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
             {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Omitiendo introducción…' : 'Omitir introducción'}</button>}
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
+          </section>
+        )}
+        {currentInteraction && narrativeState.narrativeStarted && (
+          <section aria-live="polite" className="mx-auto mt-5 max-w-5xl rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <header className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold">{interactionTitle}</h2>
+              <span className="text-sm text-gray-600">{Object.values(responseCounts).reduce((total, count) => total + count, 0)}/{connectedStudents} respondieron</span>
+            </header>
+            <div className="mt-4 grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)]">
+              <ul className="space-y-2">
+                {activeInteractions.map((student) => {
+                  const answer = currentInteraction ? student[currentInteraction] : null
+                  return <li key={student.studentId} className="flex justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span>{student.studentName}</span><span className="font-semibold text-gray-700">{answer || 'Pendiente'}</span></li>
+                })}
+                {activeInteractions.length === 0 && <li className="text-sm text-gray-500">No hay estudiantes conectados.</li>}
+              </ul>
+              <div className="space-y-3">
+                {Object.entries(responseCounts).map(([answer, count]) => <div key={answer}><div className="mb-1 flex justify-between gap-2 text-sm"><span>{answer}</span><span>{count}</span></div><div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${connectedStudents ? count / connectedStudents * 100 : 0}%` }} /></div></div>)}
+                {Object.keys(responseCounts).length === 0 && <p className="text-sm text-gray-500">Esperando respuestas de los estudiantes.</p>}
+              </div>
+            </div>
           </section>
         )}
       </section>

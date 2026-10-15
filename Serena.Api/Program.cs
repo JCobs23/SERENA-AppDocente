@@ -36,8 +36,20 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
         media.Paused, media.PositionSeconds, media.Revision, media.Command,
         classroom.Presence.Values.Count(student => student.IsConnected),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsReady),
-        classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted)
+        classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted),
+        BuildInteractionCounts(classroom, isEmotion: true),
+        BuildInteractionCounts(classroom, isEmotion: false)
     );
+}
+
+Dictionary<string, int> BuildInteractionCounts(ClassroomSession classroom, bool isEmotion)
+{
+    return classroom.Presence.Values
+        .Where(student => student.IsConnected)
+        .Select(student => isEmotion ? student.GetEmotion() : student.GetDecision())
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .GroupBy(value => value!, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
 }
 var apiContentRoot = File.Exists(Path.Combine(app.Environment.ContentRootPath, "Serena.Api.csproj"))
     ? app.Environment.ContentRootPath
@@ -136,7 +148,9 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.MediaCommand,
         narrativeState.ConnectedStudents,
         narrativeState.ReadyStudents,
-        narrativeState.IntroCompletedStudents
+        narrativeState.IntroCompletedStudents,
+        narrativeState.EmotionCounts,
+        narrativeState.DecisionCounts
     });
 });
 
@@ -173,6 +187,32 @@ app.MapPost("/api/sessions/{code}/students/{studentId}/ready", async (string cod
     await session.BroadcastStudentAsync("ready", student);
     return Results.Ok(new { ready = request.Ready });
 });
+app.MapPost("/api/sessions/{code}/students/{studentId}/emotion", async (string code, string studentId, InteractionRequest request) =>
+    await SaveStudentInteraction(code, studentId, request.Value, expectedStage: 2, isEmotion: true));
+app.MapPost("/api/sessions/{code}/students/{studentId}/decision", async (string code, string studentId, InteractionRequest request) =>
+    await SaveStudentInteraction(code, studentId, request.Value, expectedStage: 3, isEmotion: false));
+
+async Task<IResult> SaveStudentInteraction(string code, string studentId, string? value, int expectedStage, bool isEmotion)
+{
+    if (!sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !session.Presence.TryGetValue(studentId, out var student) || !student.IsConnected)
+        return Results.NotFound(new { message = "Student session was not found." });
+
+    var state = session.GetNarrativeState();
+    if (!state.Started || state.Stage != expectedStage)
+        return Results.Conflict(new { message = "Interaction does not match the active narrative stage." });
+
+    var normalizedValue = value?.Trim();
+    var allowedValues = isEmotion
+        ? new[] { "Curioso", "Miedo a la exclusión", "Neutral", "Incómodo", "Confundido" }
+        : new[] { "Dialogar directamente", "Evitar involucrarse", "Difundir el rumor", "Cambiar el tema" };
+    if (string.IsNullOrWhiteSpace(normalizedValue) || !allowedValues.Contains(normalizedValue, StringComparer.Ordinal))
+        return Results.BadRequest(new { message = "Choose one of the available interaction options." });
+
+    student.SetInteraction(isEmotion, normalizedValue);
+    await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
+    return Results.Ok(new { saved = true });
+}
 app.MapPost("/api/sessions/{code}/students/{studentId}/intro-complete", async (string code, string studentId) =>
 {
     if (!sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
@@ -282,6 +322,17 @@ app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string cod
     await session.BroadcastNarrativeStateAsync(state);
     return Results.Ok(state);
 });
+app.MapGet("/api/sessions/{code}/interactions", (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound();
+
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(session.Presence.Values.Select(student => student.InteractionToDto()).ToArray());
+});
 app.MapMethods("/api/sessions/{code}/stream", ["GET"], async (HttpContext context, string code) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher)) { context.Response.StatusCode = 401; return; }
@@ -389,7 +440,8 @@ sealed record JoinRequest(string? Name, string? StudentId = null);
 sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);
 sealed record MediaControlRequest(string? Action);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents);
+sealed record InteractionRequest(string? Value);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
@@ -437,6 +489,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             mediaUpdatedAt = DateTimeOffset.UtcNow;
             mediaRevision++;
             revision++;
+            foreach (var student in Presence.Values) student.ClearInteractions();
         }
     }
 
@@ -452,6 +505,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             mediaUpdatedAt = DateTimeOffset.UtcNow;
             mediaRevision++;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
+            foreach (var student in Presence.Values) student.ClearInteractions();
             revision++;
         }
     }
@@ -578,6 +632,8 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
     private bool connected = true;
     private bool ready;
     private bool introCompleted;
+    private string? emotion;
+    private string? decision;
     private DateTimeOffset lastSeenAt = now;
 
     public string Id { get; } = id;
@@ -585,6 +641,27 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
     public bool IsConnected { get { lock (gate) return connected; } }
     public bool IsReady { get { lock (gate) return ready; } }
     public bool IsIntroCompleted { get { lock (gate) return introCompleted; } }
+
+    public void SetInteraction(bool isEmotion, string value)
+    {
+        lock (gate)
+        {
+            if (isEmotion) emotion = value;
+            else decision = value;
+        }
+    }
+
+    public void ClearInteractions()
+    {
+        lock (gate) { emotion = null; decision = null; }
+    }
+
+    public string? GetEmotion() { lock (gate) return emotion; }
+    public string? GetDecision() { lock (gate) return decision; }
+    public object InteractionToDto()
+    {
+        lock (gate) return new { studentId = Id, studentName = name, emotion, decision, connected, ready };
+    }
 
     public bool MarkConnected(DateTimeOffset at)
     {

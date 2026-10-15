@@ -15,12 +15,14 @@ type ProjectionState = {
   connectedStudents: number
   readyStudents: number
   introCompletedStudents: number
+  emotionCounts?: Record<string, number>
+  decisionCounts?: Record<string, number>
 }
 const initialState: ProjectionState = {
   active: true, narrativeStarted: false, stage: 0, stageLabel: 'En espera',
   stageDescription: 'Esperando a que el docente inicie la experiencia.',
   revision: 0, mediaPaused: true, mediaPositionSeconds: 0, mediaRevision: 0, mediaCommand: 'pause',
-  connectedStudents: 0, readyStudents: 0, introCompletedStudents: 0,
+  connectedStudents: 0, readyStudents: 0, introCompletedStudents: 0, emotionCounts: {}, decisionCounts: {},
 }
 
 export default function ProjectionScreen({ sessionCode }: { sessionCode: string }) {
@@ -32,6 +34,9 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const [isReturning, setIsReturning] = useState(false)
   const [mediaDuration, setMediaDuration] = useState(0)
   const introPending = state.connectedStudents === 0 || state.introCompletedStudents < state.connectedStudents
+  const interactionKind = state.stage === 2 ? 'emotion' : state.stage === 3 ? 'decision' : null
+  const groupedValues = interactionKind === 'emotion' ? (state.emotionCounts ?? {}) : (state.decisionCounts ?? {})
+  const responseCount = Object.values(groupedValues).reduce((total, count) => total + count, 0)
 
   useEffect(() => {
     let active = true
@@ -57,7 +62,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     const refresh = async () => {
       try {
         const next = await apiRequest<ProjectionState>('/sessions/' + sessionCode)
-        if (active) { setState(next); setError('') }
+        if (active) { setState({ ...initialState, ...next }); setError('') }
       } catch {
         if (active) setError('No se pudo conectar con la sesión. Esperando al servidor…')
       } finally {
@@ -194,6 +199,21 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               <p className="mx-auto mt-4 max-w-3xl text-lg leading-relaxed text-white/80 sm:text-2xl">{state.stageDescription}</p>
             </div>
           </div>
+          {interactionKind && (
+            <aside aria-live="polite" className="mx-auto mt-5 w-full max-w-3xl rounded-xl border border-white/10 bg-white/5 p-5">
+              <h2 className="text-xl font-bold">{interactionKind === 'emotion' ? 'Emociones del grupo' : 'Decisiones del grupo'}</h2>
+              <p className="mt-1 text-sm text-white/65">{responseCount} de {state.connectedStudents} respuestas</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {Object.entries(groupedValues).map(([value, count]) => (
+                  <div key={value} className="rounded-lg bg-black/20 p-3">
+                    <div className="mb-2 flex justify-between gap-3 text-sm"><span>{value}</span><span>{count}</span></div>
+                    <div className="h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${state.connectedStudents ? count / state.connectedStudents * 100 : 0}%` }} /></div>
+                  </div>
+                ))}
+                {responseCount === 0 && <p className="text-sm text-white/65">Esperando respuestas de los estudiantes…</p>}
+              </div>
+            </aside>
+          )}
           {state.stage === 1 && (
             <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Controles de la narrativa en las tablets">
               <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Atrasar cinco segundos">−5 s</button>
