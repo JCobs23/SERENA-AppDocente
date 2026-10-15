@@ -12,7 +12,7 @@ type NarrativeState = {
   connectedStudents: number
   readyStudents: number
 }
-type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => void }
+type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => Promise<void> }
 
 const initialNarrativeState: NarrativeState = {
   narrativeStarted: false, stage: 0, stageLabel: 'En espera',
@@ -66,6 +66,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isControlsOpen, setIsControlsOpen] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
+  const [isReturning, setIsReturning] = useState(false)
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
@@ -138,13 +139,25 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     }
   }
 
+  async function returnToChapters() {
+    setIsReturning(true)
+    setActionError('')
+    try { await onReturnToChapters() }
+    catch (error) {
+      setActionError(error instanceof ApiError && error.status === 404
+        ? 'La API no reconoce la orden de detener la narrativa. Reinicia Serena.Api e inténtalo de nuevo.'
+        : 'No se pudo detener la narrativa. Verifica la sesión y la conexión e inténtalo de nuevo.')
+    }
+    finally { setIsReturning(false) }
+  }
+
 
   const connectionCode = sessionCode.match(/.{1,3}/g)?.join(' ') ?? sessionCode
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
-        <button type="button" onClick={onReturnToChapters} className="text-sm font-medium text-gray-800 hover:text-red-700">← Volver a capítulos</button>
+        <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a capítulos'}</button>
         <div className="flex items-center gap-3">
           <button type="button" onClick={onLogout} className="text-sm font-medium text-gray-600 hover:text-red-700">Cerrar sesión</button>
           <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="Ver controles de teclado" aria-expanded={isControlsOpen} title="Ver controles de teclado" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>
