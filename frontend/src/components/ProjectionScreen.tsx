@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiRequest } from '../lib/api'
+import { apiRequest, ApiError } from '../lib/api'
 
 type ProjectionState = {
   active: boolean
@@ -22,6 +22,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const [state, setState] = useState(initialState)
   const [error, setError] = useState('')
   const [isChangingStage, setIsChangingStage] = useState(false)
+  const [isReturning, setIsReturning] = useState(false)
   const introPending = state.connectedStudents === 0 || state.introCompletedStudents < state.connectedStudents
 
   useEffect(() => {
@@ -57,6 +58,20 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     }
   }
 
+  async function returnToChapters() {
+    setIsReturning(true)
+    setError('')
+    try {
+      await apiRequest<ProjectionState>('/sessions/' + sessionCode + '/reset', { method: 'POST' })
+      window.location.href = '/?screen=catalog'
+    } catch (error) {
+      setError(error instanceof ApiError && error.status === 404
+        ? 'La API no reconoce la orden de detener la narrativa. Reinicia Serena.Api e inténtalo de nuevo.'
+        : 'No se pudo detener la narrativa. Verifica la sesión y la conexión e inténtalo de nuevo.')
+      setIsReturning(false)
+    }
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-[#171717] text-white">
       <header className="flex items-center justify-between border-b border-white/10 bg-black/30 px-5 py-3 sm:px-8">
@@ -79,6 +94,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
             <p className="mt-4 text-lg text-white/75">La narrativa comenzará cuando todas las tablets conectadas terminen el video.</p>
             <p className="mt-6 text-base text-white/60">Completadas: {state.introCompletedStudents}/{state.connectedStudents}</p>
             {error && <p role="alert" className="mt-4 text-sm text-amber-200">{error}</p>}
+            <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mt-8 rounded-lg border border-white/30 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a escoger capítulos'}</button>
           </div>
         </section>
       ) : (
@@ -104,6 +120,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
             <button type="button" onClick={() => void changeStage(-1)} disabled={isChangingStage || state.stage <= 1} className="flex-1 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40">Etapa anterior</button>
             <button type="button" onClick={() => void changeStage(1)} disabled={isChangingStage || state.stage >= 5} className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">Avanzar etapa</button>
           </nav>
+          <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mx-auto mt-4 rounded-lg border border-white/25 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a escoger capítulos'}</button>
           {error && <p role="alert" className="mt-4 text-center text-sm text-amber-200">{error}</p>}
         </section>
       )}
