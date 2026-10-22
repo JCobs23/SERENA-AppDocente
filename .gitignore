@@ -28,3 +28,9 @@ dist/
 .env
 .env.*
 !.env.example
+
+# SQLite database files
+Serena.Api/Data/*.db
+Serena.Api/Data/*.db-shm
+Serena.Api/Data/*.db-wal
+

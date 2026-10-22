@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { apiRequest, ApiError } from '../lib/api'
+import SupervisionPanel, { type SupervisionStudent } from './SupervisionPanel'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
-type StudentInteraction = { studentId: string; studentName: string; emotion: string | null; decision: string | null; connected: boolean; ready: boolean }
+type StudentInteraction = SupervisionStudent
 type NarrativeState = {
   narrativeStarted: boolean
   stage: number
@@ -12,6 +13,14 @@ type NarrativeState = {
   revision: number
   connectedStudents: number
   readyStudents: number
+  advanceMode: 'automatic' | 'vote'
+  votingOpen: boolean
+  continueVotes: number
+  alternativeVotes: number
+  finalDecision: 'continue' | 'vote' | null
+  voteRound: number
+  emotionCounts?: Record<string, number>
+  decisionCounts?: Record<string, number>
 }
 type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => Promise<void> }
 
@@ -19,6 +28,8 @@ const initialNarrativeState: NarrativeState = {
   narrativeStarted: false, stage: 0, stageLabel: 'En espera',
   stageDescription: 'Esperando a que el docente inicie la experiencia.',
   revision: 0, connectedStudents: 0, readyStudents: 0, introCompletedStudents: 0,
+  advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
+  emotionCounts: {}, decisionCounts: {},
 }
 const shortcuts = [
   { key: 'ESPACIO', description: 'Reproducir o pausar la narrativa' },
@@ -69,20 +80,17 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isStarting, setIsStarting] = useState(false)
   const [isSkippingIntro, setIsSkippingIntro] = useState(false)
   const [isReturning, setIsReturning] = useState(false)
+  const [isSettingAdvanceMode, setIsSettingAdvanceMode] = useState(false)
   const [studentInteractions, setStudentInteractions] = useState<StudentInteraction[]>([])
+  const [isSupervisionOpen, setIsSupervisionOpen] = useState(true)
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
   const connectedStudents = students.filter((student) => student.connected).length
   const readyStudents = students.filter((student) => student.connected && student.ready).length
-  const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 3 ? 'decision' : null
-  const interactionTitle = currentInteraction === 'emotion' ? 'Emociones registradas' : 'Decisiones registradas'
+  const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 5 ? 'reflection' : narrativeState.stage >= 3 ? 'decision' : null
   const activeInteractions = studentInteractions.filter((student) => student.connected)
-  const responseCounts = activeInteractions.reduce<Record<string, number>>((counts, student) => {
-    const value = currentInteraction ? student[currentInteraction] : null
-    if (value) counts[value] = (counts[value] ?? 0) + 1
-    return counts
-  }, {})
+  const respondedStudents = activeInteractions.filter((student) => currentInteraction && student[currentInteraction]).length
 
   useEffect(() => {
     let disposed = false
@@ -181,6 +189,21 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     }
   }
 
+  async function setAdvanceMode(mode: 'automatic' | 'vote') {
+    setIsSettingAdvanceMode(true)
+    setActionError('')
+    try {
+      const state = await apiRequest<NarrativeState>('/sessions/' + sessionCode + '/advance-mode', {
+        method: 'POST', body: JSON.stringify({ mode }),
+      })
+      setNarrativeState(state)
+    } catch {
+      setActionError('No se pudo actualizar la decisión final. Verifica la conexión con la sesión.')
+    } finally {
+      setIsSettingAdvanceMode(false)
+    }
+  }
+
   async function returnToChapters() {
     setIsReturning(true)
     setActionError('')
@@ -205,6 +228,25 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
           <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="Ver controles de teclado" aria-expanded={isControlsOpen} title="Ver controles de teclado" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>
         </div>
       </header>
+
+      {narrativeState.narrativeStarted && (
+        <div className="sticky top-2 z-20 mx-auto mt-3 flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-md backdrop-blur">
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Participación del grupo">
+            <span><strong>{connectedStudents}</strong> conectados</span>
+            <span><strong>{respondedStudents}</strong> respondieron</span>
+            <span><strong>{Math.max(0, connectedStudents - respondedStudents)}</strong> pendientes</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsSupervisionOpen((open) => !open)}
+            aria-expanded={isSupervisionOpen}
+            aria-controls="supervision-panel"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+          >
+            {isSupervisionOpen ? 'Ocultar supervisión' : 'Abrir supervisión'}
+          </button>
+        </div>
+      )}
 
       <section className="mx-auto mt-12 w-full max-w-5xl sm:mt-20">
         <header className="text-center">
@@ -258,31 +300,61 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
               {projectionPath && <a href={projectionPath} target="_blank" rel="noreferrer" className="text-sm font-semibold text-red-700 underline">Abrir proyección</a>}
             </div>
             <p className="mt-3 text-sm text-gray-600">{narrativeState.stageDescription}</p>
+            {narrativeState.stage < 5 && (
+              <fieldset className="mt-5 rounded-xl border border-gray-200 bg-white p-4">
+                <legend className="px-1 text-sm font-bold text-gray-900">Modo de avance al cierre</legend>
+                <p className="text-sm text-gray-600">Configúralo antes de terminar la narrativa. Puedes cambiarlo durante la experiencia.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => void setAdvanceMode('automatic')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.advanceMode === 'automatic'} className={'rounded-lg border px-4 py-3 text-left disabled:opacity-60 ' + (narrativeState.advanceMode === 'automatic' ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600' : 'border-gray-300 bg-white hover:bg-gray-50')}>
+                    <strong className="block text-sm">Avance automático</strong>
+                    <span className="mt-1 block text-xs text-gray-600">El cierre se realiza sin solicitar votos al grupo.</span>
+                  </button>
+                  <button type="button" onClick={() => void setAdvanceMode('vote')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.advanceMode === 'vote'} className={'rounded-lg border px-4 py-3 text-left disabled:opacity-60 ' + (narrativeState.advanceMode === 'vote' ? 'border-red-600 bg-red-50 ring-2 ring-red-600' : 'border-gray-300 bg-white hover:bg-gray-50')}>
+                    <strong className="block text-sm">Votación grupal</strong>
+                    <span className="mt-1 block text-xs text-gray-600">Al llegar al cierre, cada estudiante decide desde su tablet.</span>
+                  </button>
+                </div>
+              </fieldset>
+            )}
             <p className="mt-2 text-sm text-gray-600">Introducción terminada en tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
             {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Omitiendo introducción…' : 'Omitir introducción'}</button>}
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
         )}
-        {currentInteraction && narrativeState.narrativeStarted && (
-          <section aria-live="polite" className="mx-auto mt-5 max-w-5xl rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <header className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold">{interactionTitle}</h2>
-              <span className="text-sm text-gray-600">{Object.values(responseCounts).reduce((total, count) => total + count, 0)}/{connectedStudents} respondieron</span>
-            </header>
-            <div className="mt-4 grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)]">
-              <ul className="space-y-2">
-                {activeInteractions.map((student) => {
-                  const answer = currentInteraction ? student[currentInteraction] : null
-                  return <li key={student.studentId} className="flex justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span>{student.studentName}</span><span className="font-semibold text-gray-700">{answer || 'Pendiente'}</span></li>
-                })}
-                {activeInteractions.length === 0 && <li className="text-sm text-gray-500">No hay estudiantes conectados.</li>}
-              </ul>
-              <div className="space-y-3">
-                {Object.entries(responseCounts).map(([answer, count]) => <div key={answer}><div className="mb-1 flex justify-between gap-2 text-sm"><span>{answer}</span><span>{count}</span></div><div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${connectedStudents ? count / connectedStudents * 100 : 0}%` }} /></div></div>)}
-                {Object.keys(responseCounts).length === 0 && <p className="text-sm text-gray-500">Esperando respuestas de los estudiantes.</p>}
-              </div>
+        {narrativeState.narrativeStarted && narrativeState.stage === 5 && (
+          <section aria-labelledby="final-decision-title" className="mx-auto mt-5 max-w-5xl rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-700">Cierre de la narrativa</p>
+            <h2 id="final-decision-title" className="mt-2 text-2xl font-extrabold text-gray-950">¿Cómo continúa el grupo?</h2>
+            <p className="mt-1 text-sm text-gray-600">La etapa 5 es el cierre de esta narrativa. Elige continuar o abrir una votación grupal.</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <button type="button" onClick={() => void setAdvanceMode('automatic')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.finalDecision === 'continue'} className={'min-h-40 rounded-xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ' + (narrativeState.finalDecision === 'continue' ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600' : 'border-gray-200 bg-white')}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700">→</span>
+                <strong className="mt-4 block text-lg">Avanzar sin votación</strong>
+                <span className="mt-1 block text-sm text-gray-600">El cierre continúa sin consultar al grupo y permite volver al catálogo.</span>
+              </button>
+              <button type="button" onClick={() => void setAdvanceMode('vote')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.votingOpen} className={'min-h-40 rounded-xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ' + (narrativeState.votingOpen ? 'border-red-600 bg-red-50 ring-2 ring-red-600' : 'border-gray-200 bg-white')}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-xl font-bold text-red-700">◎</span>
+                <strong className="mt-4 block text-lg">Dejarlo a votación</strong>
+                <span className="mt-1 block text-sm text-gray-600">Cada estudiante elige en su tablet si continúa o explora una alternativa.</span>
+              </button>
             </div>
+            {narrativeState.votingOpen && <p className="mt-4 rounded-lg bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800" aria-live="polite">Votos recibidos: {narrativeState.continueVotes} continuar · {narrativeState.alternativeVotes} explorar otra decisión</p>}
+            {narrativeState.finalDecision === 'continue' && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-emerald-50 px-4 py-3">
+                <p className="text-sm font-semibold text-emerald-900">Avance automático configurado. No se abrirá una votación grupal.</p>
+                <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{isReturning ? 'Volviendo al catálogo…' : 'Finalizar y volver al catálogo'}</button>
+              </div>
+            )}
+            {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
+        )}
+        {isSupervisionOpen && narrativeState.narrativeStarted && narrativeState.stage >= 2 && (
+          <SupervisionPanel
+            stage={narrativeState.stage}
+            connected={connectedStudents}
+            students={studentInteractions}
+            liveCounts={narrativeState.stage === 2 ? narrativeState.emotionCounts : narrativeState.stage === 5 ? undefined : narrativeState.decisionCounts}
+          />
         )}
       </section>
       {isControlsOpen && <NarrativeControls onClose={() => setIsControlsOpen(false)} />}

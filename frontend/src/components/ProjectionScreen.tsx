@@ -17,12 +17,19 @@ type ProjectionState = {
   introCompletedStudents: number
   emotionCounts?: Record<string, number>
   decisionCounts?: Record<string, number>
+  advanceMode: 'automatic' | 'vote'
+  votingOpen: boolean
+  continueVotes: number
+  alternativeVotes: number
+  finalDecision: 'continue' | 'vote' | null
+  voteRound: number
 }
 const initialState: ProjectionState = {
   active: true, narrativeStarted: false, stage: 0, stageLabel: 'En espera',
   stageDescription: 'Esperando a que el docente inicie la experiencia.',
   revision: 0, mediaPaused: true, mediaPositionSeconds: 0, mediaRevision: 0, mediaCommand: 'pause',
   connectedStudents: 0, readyStudents: 0, introCompletedStudents: 0, emotionCounts: {}, decisionCounts: {},
+  advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
 }
 
 export default function ProjectionScreen({ sessionCode }: { sessionCode: string }) {
@@ -199,18 +206,35 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               <p className="mx-auto mt-4 max-w-3xl text-lg leading-relaxed text-white/80 sm:text-2xl">{state.stageDescription}</p>
             </div>
           </div>
+          {state.stage === 5 && state.votingOpen && (
+            <aside aria-live="polite" aria-label="Resultado agregado de la votación" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
+              <h2 className="text-xl font-bold">Votación del grupo</h2>
+              <p className="mt-1 text-sm text-gray-600">El grupo decide el siguiente paso. Resultados agregados y anónimos.</p>
+              {(() => {
+                const total = state.continueVotes + state.alternativeVotes
+                const continuePercent = total ? state.continueVotes / total * 100 : 50
+                return <>
+                  <div className="mt-5 flex justify-between gap-3 text-sm font-semibold"><span className="text-emerald-700">Continuar · {state.continueVotes}</span><span className="text-red-700">Explorar otra decisión · {state.alternativeVotes}</span></div>
+                  <div className="mt-3 flex h-7 overflow-hidden rounded-full bg-red-600" role="img" aria-label={`${state.continueVotes} votos para continuar y ${state.alternativeVotes} para explorar otra decisión`}>
+                    <div className="bg-emerald-500 transition-[width] duration-500" style={{ width: `${continuePercent}%` }} />
+                  </div>
+                  <p className="mt-3 text-center text-sm text-gray-600">{total} votos recibidos</p>
+                </>
+              })()}
+            </aside>
+          )}
           {interactionKind && (
-            <aside aria-live="polite" className="mx-auto mt-5 w-full max-w-3xl rounded-xl border border-white/10 bg-white/5 p-5">
+            <aside aria-live="polite" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
               <h2 className="text-xl font-bold">{interactionKind === 'emotion' ? 'Emociones del grupo' : 'Decisiones del grupo'}</h2>
-              <p className="mt-1 text-sm text-white/65">{responseCount} de {state.connectedStudents} respuestas</p>
+              <p className="mt-1 text-sm text-gray-600">{responseCount} de {state.connectedStudents} respuestas</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {Object.entries(groupedValues).map(([value, count]) => (
-                  <div key={value} className="rounded-lg bg-black/20 p-3">
+                  <div key={value} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <div className="mb-2 flex justify-between gap-3 text-sm"><span>{value}</span><span>{count}</span></div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${state.connectedStudents ? count / state.connectedStudents * 100 : 0}%` }} /></div>
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${state.connectedStudents ? count / state.connectedStudents * 100 : 0}%` }} /></div>
                   </div>
                 ))}
-                {responseCount === 0 && <p className="text-sm text-white/65">Esperando respuestas de los estudiantes…</p>}
+                {responseCount === 0 && <p className="text-sm text-gray-600">Esperando respuestas de los estudiantes…</p>}
               </div>
             </aside>
           )}
@@ -232,7 +256,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
           )}
           <nav aria-label="Controles de avance de la narrativa" className="mx-auto mt-5 flex w-full max-w-2xl gap-3">
             <button type="button" onClick={() => void changeStage(-1)} disabled={isChangingStage || state.stage <= 1} className="flex-1 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40">Etapa anterior</button>
-            <button type="button" onClick={() => void changeStage(1)} disabled={isChangingStage || state.stage >= 5} className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">Avanzar etapa</button>
+            <button type="button" onClick={() => void changeStage(1)} disabled={isChangingStage || state.stage >= 5} className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">{state.stage >= 5 ? 'Narrativa finalizada' : 'Avanzar etapa'}</button>
           </nav>
           <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mx-auto mt-4 rounded-lg border border-white/25 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a escoger capítulos'}</button>
           {error && <p role="alert" className="mt-4 text-center text-sm text-amber-200">{error}</p>}

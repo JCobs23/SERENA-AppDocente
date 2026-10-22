@@ -21,13 +21,14 @@ var narrativeStages = new[]
     (Title: "Narrativa inicial", Description: "Observa la situación y comprende el contexto."),
     (Title: "Reconocer la emoción", Description: "Identifica qué emoción aparece en esta situación."),
     (Title: "Elegir una decisión", Description: "Piensa en las alternativas y elige cómo actuar."),
-    (Title: "Ver las consecuencias", Description: "Observa el efecto de la decisión en las demás personas."),
-    (Title: "Reflexionar en grupo", Description: "Comparte una reflexión sobre lo ocurrido.")
+    (Title: "Ver las consecuencias", Description: "Observa cómo afectó la situación a las personas involucradas."),
+            (Title: "Reflexionar en grupo", Description: "Comparte una reflexión sobre lo ocurrido.")
 };
 NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
 {
     var state = classroom.GetNarrativeState();
     var media = classroom.GetMediaState();
+    var voting = classroom.GetVotingState();
     var stage = state.Started && state.Stage == 0
         ? (Title: "Introducción", Description: "Mira el video introductorio antes de comenzar la narrativa.")
         : narrativeStages[state.Stage];
@@ -38,7 +39,8 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsReady),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted),
         BuildInteractionCounts(classroom, isEmotion: true),
-        BuildInteractionCounts(classroom, isEmotion: false)
+        BuildInteractionCounts(classroom, isEmotion: false),
+        voting.Mode, voting.IsOpen, voting.ContinueCount, voting.AlternativeCount, voting.FinalDecision, voting.Round
     );
 }
 
@@ -56,6 +58,24 @@ var apiContentRoot = File.Exists(Path.Combine(app.Environment.ContentRootPath, "
     : Path.Combine(app.Environment.ContentRootPath, "Serena.Api");
 var usersPath = Path.Combine(apiContentRoot, "Data", "teachers.json");
 var dummyCredential = new TeacherCredential("", "AAAAAAAAAAAAAAAAAAAAAA==", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 600_000);
+var configuredDatabasePath = builder.Configuration["Database:Path"] ?? Path.Combine("Data", "serena.db");
+var databasePath = Path.IsPathRooted(configuredDatabasePath)
+    ? configuredDatabasePath
+    : Path.Combine(apiContentRoot, configuredDatabasePath);
+var database = new SerenaDatabase(databasePath);
+database.Initialize(ReadTeacherUsers(usersPath));
+foreach (var snapshot in database.LoadSessions(DateTimeOffset.UtcNow, sessionLifetime))
+    sessions[snapshot.Code] = ClassroomSession.Restore(snapshot);
+
+app.Use(async (context, next) =>
+{
+    await next();
+    if (!HttpMethods.IsPost(context.Request.Method)) return;
+    var segments = (context.Request.Path.Value ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length >= 3 && segments[0] == "api" && segments[1] == "sessions"
+        && sessions.TryGetValue(segments[2], out var changedSession))
+        database.SaveSession(changedSession.ExportSnapshot());
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
@@ -77,7 +97,7 @@ app.MapPost("/api/auth/login", (HttpContext context, LoginRequest request) =>
     if (attempts.Count > 10) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
     var email = request.Email.Trim();
-    var user = ReadTeacherUsers(usersPath).FirstOrDefault(candidate =>
+    var user = database.ReadTeacherCredentials().FirstOrDefault(candidate =>
         string.Equals(candidate.Email, email, StringComparison.OrdinalIgnoreCase));
     var passwordMatches = VerifyPassword(request.Password, user ?? dummyCredential);
     if (user is null || !passwordMatches) return Results.Unauthorized();
@@ -125,6 +145,7 @@ app.MapPost("/api/sessions", (HttpContext context) =>
     while (sessions.ContainsKey(code));
     var session = new ClassroomSession(code, DateTimeOffset.UtcNow, teacher.Email);
     sessions[code] = session;
+    database.SaveSession(session.ExportSnapshot());
     return Results.Created($"/api/sessions/{code}", new { code, createdAt = session.CreatedAt });
 });
 
@@ -191,7 +212,35 @@ app.MapPost("/api/sessions/{code}/students/{studentId}/emotion", async (string c
     await SaveStudentInteraction(code, studentId, request.Value, expectedStage: 2, isEmotion: true));
 app.MapPost("/api/sessions/{code}/students/{studentId}/decision", async (string code, string studentId, InteractionRequest request) =>
     await SaveStudentInteraction(code, studentId, request.Value, expectedStage: 3, isEmotion: false));
+app.MapPost("/api/sessions/{code}/students/{studentId}/vote", async (string code, string studentId, VoteRequest request) =>
+{
+    if (!sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !session.Presence.TryGetValue(studentId, out var student) || !student.IsConnected)
+        return Results.NotFound(new { message = "Student session was not found." });
+    if (!session.TryCastVote(studentId, request.Choice, out var summary))
+        return Results.Conflict(new { message = "Voting is closed or this student has already voted." });
+    await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
+    return Results.Ok(new { accepted = true, choice = request.Choice, summary });
+});
 
+app.MapPost("/api/sessions/{code}/students/{studentId}/reflection", async (string code, string studentId, ReflectionRequest request) =>
+{
+    if (!sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !session.Presence.TryGetValue(studentId, out var student) || !student.IsConnected)
+        return Results.NotFound(new { message = "Student session was not found." });
+
+    var state = session.GetNarrativeState();
+    if (!state.Started || state.Stage != 5 || session.GetVotingState().IsOpen)
+        return Results.Conflict(new { message = "Reflection is closed or the active stage changed." });
+
+    var answers = request.Answers?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    if (answers is null || answers.Length != 4 || answers.Any(answer => answer is not ("yes" or "no")))
+        return Results.BadRequest(new { message = "Submit one yes/no answer for each reflection question." });
+
+    student.SetReflection(string.Join(',', answers));
+    await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
+    return Results.Ok(new { saved = true });
+});
 async Task<IResult> SaveStudentInteraction(string code, string studentId, string? value, int expectedStage, bool isEmotion)
 {
     if (!sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
@@ -322,6 +371,19 @@ app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string cod
     await session.BroadcastNarrativeStateAsync(state);
     return Results.Ok(state);
 });
+app.MapPost("/api/sessions/{code}/advance-mode", async (HttpContext context, string code, AdvanceModeRequest request) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    if (!session.ConfigureAdvanceMode(request.Mode))
+        return Results.BadRequest(new { message = "Mode must be 'automatic' or 'vote'." });
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
+});
 app.MapGet("/api/sessions/{code}/interactions", (HttpContext context, string code) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
@@ -441,7 +503,11 @@ sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);
 sealed record MediaControlRequest(string? Action);
 sealed record InteractionRequest(string? Value);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts);
+sealed record ReflectionRequest(string? Answers);
+sealed record VoteSummary(int Round, int ContinueCount, int AlternativeCount);
+sealed record VoteRequest(string? Choice);
+sealed record AdvanceModeRequest(string? Mode);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts, string AdvanceMode, bool VotingOpen, int ContinueVotes, int AlternativeVotes, string? FinalDecision, int VoteRound);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
@@ -454,12 +520,103 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     private DateTimeOffset mediaUpdatedAt = DateTimeOffset.UtcNow;
     private int mediaRevision;
     private string mediaCommand = "pause";
+    private string advanceMode = "automatic";
+    private bool votingOpen;
+    private string? finalDecision;
+    private int voteRound;
+    private readonly Dictionary<string, string> votes = new(StringComparer.Ordinal);
 
     public string Code { get; } = code;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public string TeacherEmail { get; } = teacherEmail;
     public ConcurrentDictionary<string, StudentPresence> Presence { get; } = new();
     public ConcurrentDictionary<string, TeacherStream> TeacherStreams { get; } = new();
+    public ClassroomSessionSnapshot ExportSnapshot()
+    {
+        lock (stateGate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return new ClassroomSessionSnapshot(
+                Code, CreatedAt, TeacherEmail, narrativeStarted, currentStage, revision,
+                mediaPaused, GetMediaPosition(now), mediaRevision, mediaCommand, advanceMode,
+                votingOpen, finalDecision, voteRound,
+                new Dictionary<string, string>(votes, StringComparer.Ordinal),
+                Presence.Values.Select(student => student.ExportSnapshot()).ToList());
+        }
+    }
+
+    public static ClassroomSession Restore(ClassroomSessionSnapshot snapshot)
+    {
+        var session = new ClassroomSession(snapshot.Code, snapshot.CreatedAt, snapshot.TeacherEmail)
+        {
+            narrativeStarted = snapshot.NarrativeStarted,
+            currentStage = snapshot.CurrentStage,
+            revision = snapshot.Revision,
+            mediaPaused = true,
+            mediaPositionSeconds = snapshot.MediaPositionSeconds,
+            mediaRevision = snapshot.MediaRevision,
+            mediaCommand = "pause",
+            advanceMode = snapshot.AdvanceMode,
+            votingOpen = snapshot.VotingOpen,
+            finalDecision = snapshot.FinalDecision,
+            voteRound = snapshot.VoteRound
+        };
+        foreach (var vote in snapshot.Votes)
+            session.votes[vote.Key] = vote.Value;
+        foreach (var student in snapshot.Students)
+            session.Presence[student.Id] = new StudentPresence(student);
+        return session;
+    }
+
+    public (string Mode, bool IsOpen, int ContinueCount, int AlternativeCount, string? FinalDecision, int Round) GetVotingState()
+    {
+        lock (stateGate)
+            return (advanceMode, votingOpen,
+                votes.Values.Count(choice => choice == "continue"),
+                votes.Values.Count(choice => choice == "alternative"), finalDecision, voteRound);
+    }
+
+    public bool ConfigureAdvanceMode(string? mode)
+    {
+        if (mode is not ("automatic" or "vote")) return false;
+        lock (stateGate)
+        {
+            if (advanceMode != mode)
+            {
+                votes.Clear();
+                voteRound++;
+            }
+            advanceMode = mode;
+            if (currentStage == 5)
+            {
+                finalDecision = mode == "vote" ? "vote" : "continue";
+                votingOpen = mode == "vote";
+            }
+            else
+            {
+                votingOpen = false;
+                finalDecision = null;
+            }
+            revision++;
+            return true;
+        }
+    }
+
+    public bool TryCastVote(string studentId, string? choice, out VoteSummary summary)
+    {
+        lock (stateGate)
+        {
+            if (!votingOpen || currentStage != 5 || choice is not ("continue" or "alternative") || votes.ContainsKey(studentId))
+            {
+                summary = new VoteSummary(voteRound, votes.Values.Count(value => value == "continue"), votes.Values.Count(value => value == "alternative"));
+                return false;
+            }
+            votes[studentId] = choice;
+            revision++;
+            summary = new VoteSummary(voteRound, votes.Values.Count(value => value == "continue"), votes.Values.Count(value => value == "alternative"));
+            return true;
+        }
+    }
 
     public (bool Started, int Stage, int Revision) GetNarrativeState()
     {
@@ -483,6 +640,11 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             narrativeStarted = true;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             currentStage = 0;
+            advanceMode = "automatic";
+            votingOpen = false;
+            finalDecision = null;
+            votes.Clear();
+            voteRound++;
             mediaPositionSeconds = 0;
             mediaPaused = true;
             mediaCommand = "pause";
@@ -499,6 +661,11 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             narrativeStarted = false;
             currentStage = 0;
+            advanceMode = "automatic";
+            votingOpen = false;
+            finalDecision = null;
+            votes.Clear();
+            voteRound++;
             mediaPositionSeconds = 0;
             mediaPaused = true;
             mediaCommand = "pause";
@@ -550,6 +717,18 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             else if (currentStage == 1)
                 PauseMedia();
             currentStage = nextStage;
+            if (nextStage == 5)
+            {
+                votes.Clear();
+                voteRound++;
+                votingOpen = advanceMode == "vote";
+                finalDecision = advanceMode == "vote" ? "vote" : "continue";
+            }
+            else if (nextStage != 5)
+            {
+                votingOpen = false;
+                finalDecision = null;
+            }
             revision++;
             return true;
         }
@@ -629,11 +808,28 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
 {
     private readonly object gate = new();
     private readonly string name = name;
+
+    public StudentPresence(StudentPresenceSnapshot snapshot) : this(snapshot.Id, snapshot.Name, DateTimeOffset.UtcNow)
+    {
+        connected = false;
+        ready = false;
+        introCompleted = snapshot.IntroCompleted;
+        emotion = snapshot.Emotion;
+        decision = snapshot.Decision;
+        reflection = snapshot.Reflection;
+    }
+
+    public StudentPresenceSnapshot ExportSnapshot()
+    {
+        lock (gate)
+            return new StudentPresenceSnapshot(Id, name, ready, introCompleted, emotion, decision, reflection);
+    }
     private bool connected = true;
     private bool ready;
     private bool introCompleted;
     private string? emotion;
     private string? decision;
+    private string? reflection;
     private DateTimeOffset lastSeenAt = now;
 
     public string Id { get; } = id;
@@ -642,6 +838,10 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
     public bool IsReady { get { lock (gate) return ready; } }
     public bool IsIntroCompleted { get { lock (gate) return introCompleted; } }
 
+    public void SetReflection(string value)
+    {
+        lock (gate) reflection = value;
+    }
     public void SetInteraction(bool isEmotion, string value)
     {
         lock (gate)
@@ -653,14 +853,14 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
 
     public void ClearInteractions()
     {
-        lock (gate) { emotion = null; decision = null; }
+        lock (gate) { emotion = null; decision = null; reflection = null; }
     }
 
     public string? GetEmotion() { lock (gate) return emotion; }
     public string? GetDecision() { lock (gate) return decision; }
     public object InteractionToDto()
     {
-        lock (gate) return new { studentId = Id, studentName = name, emotion, decision, connected, ready };
+        lock (gate) return new { studentId = Id, studentName = name, emotion, decision, reflection, connected, ready };
     }
 
     public bool MarkConnected(DateTimeOffset at)

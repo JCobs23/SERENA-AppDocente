@@ -26,7 +26,7 @@ Hazlo una sola vez o cuando quieras cambiar la contraseña. Desde la raíz del r
 .\Serena.Api\create-teacher.ps1
 ```
 
-Ingresa un correo `@gmail.com` y una contraseña de al menos 12 caracteres. PowerShell oculta la contraseña mientras escribes. El asistente crea `Serena.Api/Data/teachers.json` con una sal aleatoria y el hash PBKDF2; no guarda la contraseña en texto plano. No hay cuentas precargadas.
+Ingresa un correo `@gmail.com` y una contraseña de al menos 12 caracteres. PowerShell oculta la contraseña mientras escribes. El asistente genera `Serena.Api/Data/teachers.json` con una sal aleatoria y el hash PBKDF2; al iniciar, la API importa esas credenciales a SQLite (`Serena.Api/Data/serena.db`). La contraseña no se guarda en texto plano. No hay cuentas precargadas.
 
 ## 3. Instalar dependencias
 
@@ -93,7 +93,7 @@ El login, la bienvenida y el catalogo siguen dentro de frontend/src. Socket.IO c
 5. Escribe un nombre para registrarte. Regresa a la sala docente; el estudiante aparece al instante como conectado.
 6. Para simular una salida, pausa Unity o desconecta temporalmente su red. Después de 15 segundos sin latidos, la sala lo marca como desconectado. Al reanudar, el mismo ID lo muestra reconectado. Repite con varios dispositivos para observar cambios simultáneos. Varias ventanas del Editor en el mismo equipo pueden compartir PlayerPrefs y reutilizar el mismo ID.
 
-Reiniciar la API borra sesiones y códigos porque todavía se guardan en memoria. Para probar en una tablet, la API debe permanecer ejecutándose en el computador y la tablet debe poder acceder a su IP LAN por el puerto 5080. Los cambios de scripts no se aplican a la app ya instalada: después de actualizar Unity, genera e instala un build Android nuevo.
+La API guarda las sesiones, participantes, respuestas, reflexiones y votos en `Serena.Api/Data/serena.db`. Las sesiones no vencidas se restauran al reiniciar durante su ventana de 4 horas; el docente tendrá que iniciar sesión otra vez, los participantes reconectarse y la reproducción se reanuda pausada. La base se crea automáticamente y se excluye de Git. Para probar en una tablet, permite que esta acceda a la IP LAN del computador por el puerto 5080. Los cambios de scripts no se aplican a la app ya instalada: después de actualizar Unity, genera e instala un build Android nuevo.
 
 ## Qué se conecta con cada servicio
 
@@ -102,11 +102,11 @@ Reiniciar la API borra sesiones y códigos porque todavía se guardan en memoria
 - `frontend` (React/Vite): navegación login → bienvenida → catálogo → sala con código.
 - Unity: valida el código y registra el nombre mediante REST.
 
-El código de cuenta queda local en `Serena.Api/Data/teachers.json`, excluido de Git. La lista de estudiantes vive en memoria. Los errores de login son genéricos y el código de autenticación no imprime contraseñas en consola.
+Las credenciales se consultan desde SQLite; `teachers.json` se conserva como archivo de aprovisionamiento y se importa al arrancar. La lista de participantes y las interacciones quedan en SQLite. El archivo `serena.db` es local al servidor y está excluido de Git.
 
 ## Límites antes de usar datos reales
 
-El login se envía desde Vite local a la API por TLS, pero el proxy de desarrollo desactiva la validación del certificado local. En un despliegue se debe servir el frontend y la API en HTTPS con certificados válidos, no usar el servidor de desarrollo Vite y retirar esa excepción del proxy. La comunicación de Unity con la API en el puerto 5080 todavía usa HTTP y transmite el nombre sin cifrar. No usar con datos reales hasta proteger también ese tramo. Para el despliegue se debe migrar el JSON local a una base de datos con permisos y copias protegidas.
+El login se envía desde Vite local a la API por TLS, pero el proxy de desarrollo desactiva la validación del certificado local. En un despliegue se debe servir el frontend y la API en HTTPS con certificados válidos, no usar el servidor de desarrollo Vite y retirar esa excepción del proxy. La comunicación de Unity con la API en el puerto 5080 todavía usa HTTP y transmite el nombre sin cifrar. No usar con datos reales hasta proteger también ese tramo. En el despliegue, limita permisos del archivo SQLite y configura copias de seguridad protegidas.
 
 ## 7. Iniciar y sincronizar la experiencia
 
