@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiRequest, ApiError } from '../lib/api'
 import SupervisionPanel, { type SupervisionStudent } from './SupervisionPanel'
+import FinalDecisionPanel from './FinalDecisionPanel'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
 type StudentInteraction = SupervisionStudent
@@ -89,6 +90,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const connectedStudents = students.filter((student) => student.connected).length
   const readyStudents = students.filter((student) => student.connected && student.ready).length
   const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 5 ? 'reflection' : narrativeState.stage >= 3 ? 'decision' : null
+  const isFinalDecision = narrativeState.narrativeStarted && narrativeState.stage === 5
   const activeInteractions = studentInteractions.filter((student) => student.connected)
   const respondedStudents = activeInteractions.filter((student) => currentInteraction && student[currentInteraction]).length
 
@@ -189,7 +191,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     }
   }
 
-  async function setAdvanceMode(mode: 'automatic' | 'vote') {
+  async function setAdvanceMode(mode: 'automatic' | 'vote'): Promise<boolean> {
     setIsSettingAdvanceMode(true)
     setActionError('')
     try {
@@ -197,8 +199,10 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         method: 'POST', body: JSON.stringify({ mode }),
       })
       setNarrativeState(state)
+      return true
     } catch {
-      setActionError('No se pudo actualizar la decisión final. Verifica la conexión con la sesión.')
+      setActionError('No se pudo guardar la decisiÃ³n. Verifica la conexiÃ³n con la sesiÃ³n.')
+      return false
     } finally {
       setIsSettingAdvanceMode(false)
     }
@@ -222,14 +226,14 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
-        <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a capítulos'}</button>
+        {isFinalDecision ? <span className="text-sm font-bold uppercase tracking-[0.16em] text-stone-600">Serena · Cierre</span> : <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a capítulos'}</button>}
         <div className="flex items-center gap-3">
           <button type="button" onClick={onLogout} className="text-sm font-medium text-gray-600 hover:text-red-700">Cerrar sesión</button>
-          <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="Ver controles de teclado" aria-expanded={isControlsOpen} title="Ver controles de teclado" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>
+          {!isFinalDecision && <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="Ver controles de teclado" aria-expanded={isControlsOpen} title="Ver controles de teclado" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>}
         </div>
       </header>
 
-      {narrativeState.narrativeStarted && (
+      {narrativeState.narrativeStarted && !isFinalDecision && (
         <div className="sticky top-2 z-20 mx-auto mt-3 flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-md backdrop-blur">
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Participación del grupo">
             <span><strong>{connectedStudents}</strong> conectados</span>
@@ -248,7 +252,10 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         </div>
       )}
 
-      <section className="mx-auto mt-12 w-full max-w-5xl sm:mt-20">
+      <section className={'mx-auto w-full ' + (isFinalDecision ? 'mt-10 max-w-4xl sm:mt-16' : 'mt-12 max-w-5xl sm:mt-20')}>
+        {isFinalDecision ? (
+          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning} error={actionError} onSelect={setAdvanceMode} onFinish={() => void returnToChapters()} />
+        ) : <>
         <header className="text-center">
           <h1 className="text-4xl font-extrabold text-black">Sala de espera</h1>
           <p className="mt-2 text-base font-medium text-gray-600">Capítulo 1: Narrativa 1</p>
@@ -321,33 +328,6 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
         )}
-        {narrativeState.narrativeStarted && narrativeState.stage === 5 && (
-          <section aria-labelledby="final-decision-title" className="mx-auto mt-5 max-w-5xl rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-700">Cierre de la narrativa</p>
-            <h2 id="final-decision-title" className="mt-2 text-2xl font-extrabold text-gray-950">¿Cómo continúa el grupo?</h2>
-            <p className="mt-1 text-sm text-gray-600">La etapa 5 es el cierre de esta narrativa. Elige continuar o abrir una votación grupal.</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <button type="button" onClick={() => void setAdvanceMode('automatic')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.finalDecision === 'continue'} className={'min-h-40 rounded-xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ' + (narrativeState.finalDecision === 'continue' ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600' : 'border-gray-200 bg-white')}>
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700">→</span>
-                <strong className="mt-4 block text-lg">Avanzar sin votación</strong>
-                <span className="mt-1 block text-sm text-gray-600">El cierre continúa sin consultar al grupo y permite volver al catálogo.</span>
-              </button>
-              <button type="button" onClick={() => void setAdvanceMode('vote')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.votingOpen} className={'min-h-40 rounded-xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ' + (narrativeState.votingOpen ? 'border-red-600 bg-red-50 ring-2 ring-red-600' : 'border-gray-200 bg-white')}>
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-xl font-bold text-red-700">◎</span>
-                <strong className="mt-4 block text-lg">Dejarlo a votación</strong>
-                <span className="mt-1 block text-sm text-gray-600">Cada estudiante elige en su tablet si continúa o explora una alternativa.</span>
-              </button>
-            </div>
-            {narrativeState.votingOpen && <p className="mt-4 rounded-lg bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800" aria-live="polite">Votos recibidos: {narrativeState.continueVotes} continuar · {narrativeState.alternativeVotes} explorar otra decisión</p>}
-            {narrativeState.finalDecision === 'continue' && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-emerald-50 px-4 py-3">
-                <p className="text-sm font-semibold text-emerald-900">Avance automático configurado. No se abrirá una votación grupal.</p>
-                <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{isReturning ? 'Volviendo al catálogo…' : 'Finalizar y volver al catálogo'}</button>
-              </div>
-            )}
-            {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
-          </section>
-        )}
         {isSupervisionOpen && narrativeState.narrativeStarted && narrativeState.stage >= 2 && (
           <SupervisionPanel
             stage={narrativeState.stage}
@@ -356,6 +336,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             liveCounts={narrativeState.stage === 2 ? narrativeState.emotionCounts : narrativeState.stage === 5 ? undefined : narrativeState.decisionCounts}
           />
         )}
+        </>}
       </section>
       {isControlsOpen && <NarrativeControls onClose={() => setIsControlsOpen(false)} />}
     </main>

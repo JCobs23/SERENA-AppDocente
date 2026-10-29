@@ -171,7 +171,13 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.ReadyStudents,
         narrativeState.IntroCompletedStudents,
         narrativeState.EmotionCounts,
-        narrativeState.DecisionCounts
+        narrativeState.DecisionCounts,
+        narrativeState.AdvanceMode,
+        narrativeState.VotingOpen,
+        narrativeState.ContinueVotes,
+        narrativeState.AlternativeVotes,
+        narrativeState.FinalDecision,
+        narrativeState.VoteRound
     });
 });
 
