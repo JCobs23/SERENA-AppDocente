@@ -5,6 +5,7 @@ Serena.Api/Data/teachers.json
 .dotnet-cli/
 UnityIntegration/
 DEPENDENCIAS/
+.tmp/
 
 # Visual Studio / IDE
 .vs/
@@ -29,3 +30,8 @@ dist/
 .env
 .env.*
 !.env.example
+
+# SQLite database files
+Serena.Api/Data/*.db
+Serena.Api/Data/*.db-shm
+Serena.Api/Data/*.db-wal
