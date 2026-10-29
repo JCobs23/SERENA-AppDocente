@@ -4,6 +4,7 @@ Serena.Api/build-*/
 Serena.Api/Data/teachers.json
 .dotnet-cli/
 UnityIntegration/
+DEPENDENCIAS/
 
 # Visual Studio / IDE
 .vs/

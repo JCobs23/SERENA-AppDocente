@@ -34,7 +34,8 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
         state.Started, state.Stage, stage.Title, stage.Description, state.Revision,
         classroom.Presence.Values.Count(student => student.IsConnected),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsReady),
-        classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted)
+        classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted),
+        state.IsPaused, state.ElapsedSeconds, state.VolumePercent
     );
 }
 var apiContentRoot = File.Exists(Path.Combine(app.Environment.ContentRootPath, "Serena.Api.csproj"))
@@ -130,7 +131,10 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.Revision,
         narrativeState.ConnectedStudents,
         narrativeState.ReadyStudents,
-        narrativeState.IntroCompletedStudents
+        narrativeState.IntroCompletedStudents,
+        narrativeState.IsPaused,
+        narrativeState.ElapsedSeconds,
+        narrativeState.VolumePercent
     });
 });
 
@@ -222,6 +226,8 @@ app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string cod
     var narrativeState = session.GetNarrativeState();
     if (!narrativeState.Started)
         return Results.Conflict(new { message = "Start the narrative before changing stages." });
+    if (narrativeState.IsPaused)
+        return Results.Conflict(new { message = "Resume the narrative before changing stages." });
     var connectedStudents = session.Presence.Values.Where(student => student.IsConnected).ToArray();
     if (narrativeState.Stage == 0 || connectedStudents.Length == 0 || connectedStudents.Any(student => !student.IsIntroCompleted))
         return Results.Conflict(new { message = "Wait until every connected student has completed the introduction." });
@@ -231,6 +237,33 @@ app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string cod
     if (session.ChangeStage(request.Direction, narrativeStages.Length - 1))
         await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
     return Results.Ok(BuildNarrativeState(session));
+});
+app.MapPost("/api/sessions/{code}/playback", async (HttpContext context, string code, PlaybackRequest request) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    if (!session.SetPaused(request.Paused))
+        return Results.Conflict(new { message = "Start the narrative before changing playback." });
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
+});
+app.MapPost("/api/sessions/{code}/volume", async (HttpContext context, string code, VolumeRequest request) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    if (request.VolumePercent is < 0 or > 100)
+        return Results.BadRequest(new { message = "Volume must be between 0 and 100." });
+    session.SetVolume(request.VolumePercent);
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
 });
 app.MapMethods("/api/sessions/{code}/stream", ["GET"], async (HttpContext context, string code) =>
 {
@@ -338,12 +371,18 @@ sealed record LoginRequest(string? Email, string? Password);
 sealed record JoinRequest(string? Name, string? StudentId = null);
 sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents);
+sealed record PlaybackRequest(bool Paused);
+sealed record VolumeRequest(int VolumePercent);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents, bool IsPaused, int ElapsedSeconds, int VolumePercent);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
     private readonly object stateGate = new();
     private bool narrativeStarted;
+    private bool isPaused;
+    private DateTimeOffset? playbackStartedAt;
+    private double elapsedSeconds;
+    private int volumePercent = 70;
     private int currentStage;
     private int revision;
 
@@ -353,9 +392,14 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     public ConcurrentDictionary<string, StudentPresence> Presence { get; } = new();
     public ConcurrentDictionary<string, TeacherStream> TeacherStreams { get; } = new();
 
-    public (bool Started, int Stage, int Revision) GetNarrativeState()
+    public (bool Started, int Stage, int Revision, bool IsPaused, int ElapsedSeconds, int VolumePercent) GetNarrativeState()
     {
-        lock (stateGate) return (narrativeStarted, currentStage, revision);
+        lock (stateGate)
+        {
+            var elapsed = elapsedSeconds + (!isPaused && playbackStartedAt is not null
+                ? (DateTimeOffset.UtcNow - playbackStartedAt.Value).TotalSeconds : 0);
+            return (narrativeStarted, currentStage, revision, isPaused, Math.Max(0, (int)elapsed), volumePercent);
+        }
     }
 
     public void StartNarrative()
@@ -364,8 +408,38 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             if (narrativeStarted) return;
             narrativeStarted = true;
+            isPaused = false;
+            elapsedSeconds = 0;
+            playbackStartedAt = DateTimeOffset.UtcNow;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
             currentStage = 0;
+            revision++;
+        }
+    }
+
+    public bool SetPaused(bool paused)
+    {
+        lock (stateGate)
+        {
+            if (!narrativeStarted) return false;
+            if (isPaused == paused) return true;
+            if (paused && playbackStartedAt is not null)
+            {
+                elapsedSeconds += (DateTimeOffset.UtcNow - playbackStartedAt.Value).TotalSeconds;
+                playbackStartedAt = null;
+            }
+            else if (!paused) playbackStartedAt = DateTimeOffset.UtcNow;
+            isPaused = paused;
+            revision++;
+            return true;
+        }
+    }
+
+    public void SetVolume(int value)
+    {
+        lock (stateGate)
+        {
+            volumePercent = value;
             revision++;
         }
     }
