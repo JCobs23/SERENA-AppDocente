@@ -11,13 +11,21 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
 
-  const emailIsValid = /^[^\s@]+@gmail\.com$/i.test(email.trim())
+  // The API authenticates against the configured teacher accounts. The client
+  // only checks that the address is syntactically valid; the institution has
+  // not yet provided a single approved email domain.
+  const normalizedEmail = email.trim()
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage('')
-    if (!emailIsValid || !password) {
-      setMessage(!emailIsValid ? 'Usa tu correo docente terminado en @gmail.com.' : 'Ingresa tu contraseña.')
+    if (!normalizedEmail || !emailIsValid || !password) {
+      setMessage(!normalizedEmail
+        ? 'Ingresa tu correo electrónico institucional.'
+        : !emailIsValid
+          ? 'Ingresa un correo electrónico válido.'
+          : 'Ingresa tu contraseña.')
       return
     }
 
@@ -28,14 +36,14 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         credentials: 'same-origin',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       })
       if (!response.ok) {
         setMessage(response.status === 401 ? 'Correo o contraseña incorrectos.' : 'No fue posible iniciar sesión. Inténtalo de nuevo.')
         return
       }
       setPassword('')
-      onLogin(email.trim())
+      onLogin(normalizedEmail)
     } catch {
       setMessage('No se pudo conectar con Serena. Verifica que los servidores estén iniciados.')
     } finally {
@@ -63,11 +71,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             onChange={(event) => setEmail(event.target.value)}
             aria-invalid={Boolean(email) && !emailIsValid}
             aria-describedby="email-hint"
-            placeholder="docente@gmail.com"
-            className="h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 aria-[invalid=true]:border-red-500 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-red-100"
+            placeholder="docente@institucion.edu.co"
+            className="serena-login-input h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 aria-[invalid=true]:border-red-500 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-red-100"
           />
           <p id="email-hint" className={`mt-1 min-h-4 text-xs ${email && !emailIsValid ? 'text-red-600' : 'text-transparent'}`} aria-live="polite">
-            {email && !emailIsValid ? 'El correo debe terminar en @gmail.com.' : 'Correo válido.'}
+            {email && !emailIsValid ? 'Revisa el formato del correo.' : 'Usa la cuenta docente registrada.'}
           </p>
 
           <label htmlFor="teacher-password" className="mb-2 mt-3 block text-sm font-bold">Contraseña</label>
@@ -81,7 +89,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Ingresa tu contraseña"
-              className="h-11 w-full rounded-md border border-gray-300 px-3 pr-12 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              className="serena-login-input h-11 w-full rounded-md border border-gray-300 px-3 pr-12 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             />
             <button
               type="button"

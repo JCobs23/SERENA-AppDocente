@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Serena | Bienvenida</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="welcome-body">
+    <main class="welcome-page">
+        
+        <!-- Encabezado con ícono -->
+        <header class="welcome-brand">
+            <div class="header-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3L12 12L21 9L15 15L18 24L12 18L3 21L9 15Z"/></svg>
+            </div>
+            <h1>Bienvenido a Serena</h1>
+            <p>Plataforma Pedagógica de Aprendizaje Socioemocional</p>
+        </header>
+
+        <!-- Tarjeta de Propósito Pedagógico -->
+        <section class="info-card purpose-card">
+            <h2>Propósito Pedagógico</h2>
+            <p>Serena es una herramienta educativa diseñada específicamente para el <strong class="text-red">Colegio Bilingüe Guillermo Ponce de León</strong> con el objetivo de fortalecer las competencias socioemocionales de los estudiantes a través de narrativas interactivas que promueven la reflexión, el diálogo y el desarrollo integral.</p>
+            <p>Cada narrativa ha sido cuidadosamente diseñada para abordar aspectos fundamentales como la empatía, la comunicación efectiva, la gestión emocional y el trabajo colaborativo, proporcionando un espacio seguro para que los estudiantes exploren y desarrollen estas habilidades esenciales para su vida personal y académica.</p>
+        </section>
+
+        <!-- Cuadrícula de 4 características -->
+        <div class="features-grid">
+            
+            <div class="info-card feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                </div>
+                <h3>Desarrollo Emocional</h3>
+                <p>Fortalece la inteligencia emocional y el autoconocimiento de los estudiantes</p>
+            </div>
+
+            <div class="info-card feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                </div>
+                <h3>Aprendizaje Colaborativo</h3>
+                <p>Fomenta el trabajo en equipo y la comunicación efectiva en el aula</p>
+            </div>
+
+            <div class="info-card feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>
+                </div>
+                <h3>Pensamiento Crítico</h3>
+                <p>Desarrolla habilidades de análisis y resolución de conflictos</p>
+            </div>
+
+            <div class="info-card feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                </div>
+                <h3>Narrativas Interactivas</h3>
+                <p>Experiencias inmersivas diseñadas para el aprendizaje socioemocional</p>
+            </div>
+
+        </div>
+
+        <!-- Botón Continuar centrado con flecha -->
+        <div class="action-container">
+            <button class="submit-button continue-btn" id="btn-continuar">
+                Continuar
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        document.getElementById('btn-continuar').addEventListener('click', function() {
+            alert('Navegando a los contenidos de Serena...');
+        });
+    </script>
+</body>
+</html>

@@ -14,3 +14,16 @@
     font-family: 'Nunito Sans', 'Avenir Next', Avenir, ui-sans-serif, system-ui, sans-serif;
   }
 }
+
+@keyframes serena-focus-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(16, 185, 129, .22), 0 0 0 5px rgba(16, 185, 129, .08); }
+  50% { box-shadow: 0 0 0 3px rgba(16, 185, 129, .38), 0 0 0 8px rgba(16, 185, 129, .12); }
+}
+
+.serena-login-input:focus {
+  animation: serena-focus-pulse 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .serena-login-input:focus { animation: none; }
+}
