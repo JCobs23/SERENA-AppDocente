@@ -37,6 +37,7 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
         media.Paused, media.PositionSeconds, media.Revision, media.Command,
         media.VolumePercent,
         classroom.Presence.Values.Count(student => student.IsConnected),
+        classroom.Presence.Count,
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsReady),
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted),
         BuildInteractionCounts(classroom, isEmotion: true),
@@ -48,7 +49,6 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
 Dictionary<string, int> BuildInteractionCounts(ClassroomSession classroom, bool isEmotion)
 {
     return classroom.Presence.Values
-        .Where(student => student.IsConnected)
         .Select(student => isEmotion ? student.GetEmotion() : student.GetDecision())
         .Where(value => !string.IsNullOrWhiteSpace(value))
         .GroupBy(value => value!, StringComparer.Ordinal)
@@ -170,6 +170,7 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.MediaCommand,
         narrativeState.VolumePercent,
         narrativeState.ConnectedStudents,
+        narrativeState.ParticipantCount,
         narrativeState.ReadyStudents,
         narrativeState.IntroCompletedStudents,
         narrativeState.EmotionCounts,
@@ -532,7 +533,7 @@ sealed record ReflectionRequest(string? Answers);
 sealed record VoteSummary(int Round, int ContinueCount, int AlternativeCount);
 sealed record VoteRequest(string? Choice);
 sealed record AdvanceModeRequest(string? Mode);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int VolumePercent, int ConnectedStudents, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts, string AdvanceMode, bool VotingOpen, int ContinueVotes, int AlternativeVotes, string? FinalDecision, int VoteRound);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int VolumePercent, int ConnectedStudents, int ParticipantCount, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts, string AdvanceMode, bool VotingOpen, int ContinueVotes, int AlternativeVotes, string? FinalDecision, int VoteRound);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {

@@ -82,9 +82,10 @@ export default function FinalDecisionPanel({ state, busy, error, onSelect, onFin
       )}
 
       {selectedVote && (
-        <p role="status" aria-live="polite" className="mt-5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
-          Votos recibidos: {state.continueVotes} continuar · {state.alternativeVotes} explorar otra decisión
-        </p>
+        <div role="status" aria-live="polite" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
+          <p>Votos recibidos: {state.continueVotes} continuar · {state.alternativeVotes} explorar otra decisión</p>
+          <button type="button" onClick={onFinish} disabled={busy} className="rounded-lg bg-rose-800 px-4 py-2 text-white hover:bg-rose-900 disabled:opacity-60">Cerrar sesión y ver resumen</button>
+        </div>
       )}
       {busy && <p role="status" className="mt-4 text-sm text-stone-600">Guardando la decisión…</p>}
       {error && <p role="alert" className="mt-4 text-sm font-medium text-rose-800">{error}</p>}

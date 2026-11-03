@@ -14,6 +14,7 @@ type ProjectionState = {
   mediaCommand: string
   volumePercent: number
   connectedStudents: number
+  participantCount: number
   readyStudents: number
   introCompletedStudents: number
   emotionCounts?: Record<string, number>
@@ -29,7 +30,7 @@ const initialState: ProjectionState = {
   active: true, narrativeStarted: false, stage: 0, stageLabel: 'En espera',
   stageDescription: 'Esperando a que el docente inicie la experiencia.',
   revision: 0, mediaPaused: true, mediaPositionSeconds: 0, mediaRevision: 0, mediaCommand: 'pause', volumePercent: 70,
-  connectedStudents: 0, readyStudents: 0, introCompletedStudents: 0, emotionCounts: {}, decisionCounts: {},
+  connectedStudents: 0, participantCount: 0, readyStudents: 0, introCompletedStudents: 0, emotionCounts: {}, decisionCounts: {},
   advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
 }
 
@@ -46,6 +47,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const interactionKind = state.stage === 2 ? 'emotion' : state.stage === 3 ? 'decision' : null
   const groupedValues = interactionKind === 'emotion' ? (state.emotionCounts ?? {}) : (state.decisionCounts ?? {})
   const responseCount = Object.values(groupedValues).reduce((total, count) => total + count, 0)
+  const highestCount = Math.max(0, ...Object.values(groupedValues))
 
   useEffect(() => {
     let active = true
@@ -244,12 +246,12 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
           {interactionKind && (
             <aside aria-live="polite" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
               <h2 className="text-xl font-bold">{interactionKind === 'emotion' ? 'Emociones del grupo' : 'Decisiones del grupo'}</h2>
-              <p className="mt-1 text-sm text-gray-600">{responseCount} de {state.connectedStudents} respuestas</p>
+              <p className="mt-1 text-sm text-gray-600">{responseCount} de {state.participantCount} participantes respondieron</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {Object.entries(groupedValues).map(([value, count]) => (
-                  <div key={value} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <div className="mb-2 flex justify-between gap-3 text-sm"><span>{value}</span><span>{count}</span></div>
-                    <div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${state.connectedStudents ? count / state.connectedStudents * 100 : 0}%` }} /></div>
+                  <div key={value} className={'rounded-lg border p-3 transition-colors ' + (count === highestCount ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-gray-50')}>
+                    <div className="mb-2 flex justify-between gap-3 text-sm"><span>{count === highestCount ? '★ ' : ''}{value}{count === highestCount ? ' · Mayoría' : ''}</span><span>{count} ({responseCount ? Math.round(count / responseCount * 100) : 0}%)</span></div>
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className={'h-full rounded-full transition-[width] duration-300 ' + (count === highestCount ? 'bg-emerald-500' : 'bg-blue-500')} style={{ width: `${state.participantCount ? count / state.participantCount * 100 : 0}%` }} /></div>
                   </div>
                 ))}
                 {responseCount === 0 && <p className="text-sm text-gray-600">Esperando respuestas de los estudiantes…</p>}

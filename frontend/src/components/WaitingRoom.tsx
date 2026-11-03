@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiRequest, ApiError } from '../lib/api'
 import SupervisionPanel, { type SupervisionStudent } from './SupervisionPanel'
 import FinalDecisionPanel from './FinalDecisionPanel'
+import SessionSummary from './SessionSummary'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
 type StudentInteraction = SupervisionStudent
@@ -84,6 +85,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isSettingAdvanceMode, setIsSettingAdvanceMode] = useState(false)
   const [studentInteractions, setStudentInteractions] = useState<StudentInteraction[]>([])
   const [isSupervisionOpen, setIsSupervisionOpen] = useState(true)
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false)
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
@@ -224,6 +226,9 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const connectionCode = sessionCode.match(/.{1,3}/g)?.join(' ') ?? sessionCode
 
   return (
+    isSummaryOpen
+      ? <SessionSummary students={studentInteractions} votes={{ continue: narrativeState.continueVotes, alternative: narrativeState.alternativeVotes }} onFinish={() => void returnToChapters()} />
+      :
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
         {isFinalDecision ? <span className="text-sm font-bold uppercase tracking-[0.16em] text-stone-600">Serena · Cierre</span> : <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a capítulos'}</button>}
@@ -254,7 +259,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
 
       <section className={'mx-auto w-full ' + (isFinalDecision ? 'mt-10 max-w-4xl sm:mt-16' : 'mt-12 max-w-5xl sm:mt-20')}>
         {isFinalDecision ? (
-          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning} error={actionError} onSelect={setAdvanceMode} onFinish={() => void returnToChapters()} />
+          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning} error={actionError} onSelect={setAdvanceMode} onFinish={() => setIsSummaryOpen(true)} />
         ) : <>
         <header className="text-center">
           <h1 className="text-4xl font-extrabold text-black">Sala de espera</h1>
@@ -331,9 +336,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         {isSupervisionOpen && narrativeState.narrativeStarted && narrativeState.stage >= 2 && (
           <SupervisionPanel
             stage={narrativeState.stage}
-            connected={connectedStudents}
             students={studentInteractions}
-            liveCounts={narrativeState.stage === 2 ? narrativeState.emotionCounts : narrativeState.stage === 5 ? undefined : narrativeState.decisionCounts}
           />
         )}
         </>}
