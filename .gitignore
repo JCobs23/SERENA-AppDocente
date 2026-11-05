@@ -1,16 +1,22 @@
 # Dependencies
 node_modules/
+**/node_modules/
 
 # Build output
-dist/
 build/
+dist/
 coverage/
 .vite/
+**/bin/
+**/obj/
+**/publish/
+Serena.Api/build-*/
 
-# Environment variables
+# Environment variables and local credentials
 .env
 .env.*
 !.env.example
+Serena.Api/Data/teachers.json
 
 # Logs
 logs/
@@ -25,10 +31,22 @@ lerna-debug.log*
 pids/
 *.pid
 *.pid.lock
+Serena.Api/Data/*.db
+Serena.Api/Data/*.db-shm
+Serena.Api/Data/*.db-wal
+
+# Local development artifacts
+.dotnet-cli/
+UnityIntegration/
+DEPENDENCIAS/
+.tmp/
 
 # Editor and operating system files
 .vscode/
 .idea/
+.vs/
+*.user
+*.suo
 .DS_Store
 Thumbs.db
 *.swp
