@@ -459,7 +459,7 @@ app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string cod
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
     if (!session.ControlNarrativeMedia(request.Action ?? string.Empty))
-        return Results.Conflict(new { message = "Media controls are available only during stage 1." });
+        return Results.Conflict(new { message = "Media controls are available only during stages 1 and 4." });
 
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
@@ -828,9 +828,10 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             var nextStage = Math.Clamp(currentStage + direction, 1, maxStage);
             if (nextStage == currentStage) return false;
-            if (nextStage == 1)
+            // Etapas con video proyectado: 1 (narrativa) y 4 (consecuencia de la decisión).
+            if (HasProjectedVideo(nextStage))
                 StartMediaFromBeginning();
-            else if (currentStage == 1)
+            else if (HasProjectedVideo(currentStage))
                 PauseMedia();
             currentStage = nextStage;
             if (nextStage == 5)
@@ -854,7 +855,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     {
         lock (stateGate)
         {
-            if (!narrativeStarted || currentStage != 1) return false;
+            if (!narrativeStarted || !HasProjectedVideo(currentStage)) return false;
             var now = DateTimeOffset.UtcNow;
             var currentPosition = GetMediaPosition(now);
             switch (action)
@@ -890,7 +891,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     {
         lock (stateGate)
         {
-            if (!narrativeStarted || currentStage != 1) return false;
+            if (!narrativeStarted || !HasProjectedVideo(currentStage)) return false;
             if (volumePercent == value) return true;
             volumePercent = value;
             revision++;
@@ -900,6 +901,8 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
 
     private double GetMediaPosition(DateTimeOffset now) => mediaPositionSeconds
         + (mediaPaused ? 0 : Math.Max(0, (now - mediaUpdatedAt).TotalSeconds));
+
+    private static bool HasProjectedVideo(int stage) => stage == 1 || stage == 4;
 
     private void StartMediaFromBeginning()
     {

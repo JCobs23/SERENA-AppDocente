@@ -35,19 +35,6 @@ const initialState: ProjectionState = {
 }
 
 const NARRATIVE_VIDEO = '/videos/narrativa-inicial.mp4'
-const DECISION_VIDEOS: Record<string, string> = {
-  'Dialogar directamente': '/videos/Decision_DialogarDirectamente.mp4',
-  'Evitar involucrarse': '/videos/Decision_EvitarInvolucrarse.mp4',
-  'Difundir el rumor': '/videos/Decision_DifundirRumor.mp4',
-  'Cambiar el tema': '/videos/Decision_CambiarTema.mp4',
-}
-
-// Etapa 4: se proyecta la consecuencia de la decisión con más votos del grupo.
-function getLeadingDecision(counts: Record<string, number>) {
-  return Object.entries(counts)
-    .filter(([decision, count]) => DECISION_VIDEOS[decision] && count > 0)
-    .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null
-}
 
 export default function ProjectionScreen({ sessionCode }: { sessionCode: string }) {
   const [state, setState] = useState(initialState)
@@ -66,10 +53,12 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const groupedValues = interactionKind === 'emotion' ? (state.emotionCounts ?? {}) : (state.decisionCounts ?? {})
   const responseCount = Object.values(groupedValues).reduce((total, count) => total + count, 0)
   const highestCount = Math.max(0, ...Object.values(groupedValues))
-  const showsStageVideo = state.stage >= 1 && state.stage <= 4
+  // La narrativa se proyecta en las etapas 1 a 3 (borrosa en 2 y 3).
+  const showsStageVideo = state.stage >= 1 && state.stage <= 3
   const isBlurredStage = state.stage === 2 || state.stage === 3
-  const leadingDecision = state.stage === 4 ? getLeadingDecision(state.decisionCounts ?? {}) : null
-  const videoSource = leadingDecision ? DECISION_VIDEOS[leadingDecision] : NARRATIVE_VIDEO
+  // Etapa 4: cada tablet reproduce la consecuencia de su propia decisión;
+  // los controles del docente se aplican a todas las tablets.
+  const hasMediaControls = state.stage === 1 || state.stage === 4
 
   useEffect(() => {
     const video = narrativeVideoRef.current
@@ -86,18 +75,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
 
     video.volume = Math.min(1, Math.max(0, state.volumePercent / 100))
     // Etapas 2 y 3: el video queda congelado y borroso de fondo mientras el grupo responde.
-    if (isBlurredStage || (state.stage === 4 && !leadingDecision)) {
-      video.pause()
-      setVideoNeedsGesture(false)
-      return
-    }
-    if (state.stage === 4) {
-      void video.play()
-        .then(() => setVideoNeedsGesture(false))
-        .catch(() => setVideoNeedsGesture(true))
-      return
-    }
-    if (state.mediaPaused) {
+    if (state.stage !== 1 || state.mediaPaused) {
       video.pause()
       setVideoNeedsGesture(false)
       return
@@ -106,7 +84,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     void video.play()
       .then(() => setVideoNeedsGesture(false))
       .catch(() => setVideoNeedsGesture(true))
-  }, [state.stage, state.mediaPaused, state.volumePercent, showsStageVideo, isBlurredStage, leadingDecision, videoSource])
+  }, [state.stage, state.mediaPaused, state.volumePercent, showsStageVideo])
 
   useEffect(() => {
     let active = true
@@ -181,7 +159,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
           : error.status === 404
             ? 'La API no encuentra esta sesión. Inicia una sesión nueva desde el catálogo.'
             : error.status === 409
-              ? 'Los controles multimedia solo funcionan durante la Etapa 1.'
+              ? 'Los controles multimedia solo funcionan durante las etapas 1 y 4.'
               : 'La API rechazó el control multimedia (HTTP ' + error.status + ').'
         : 'No se pudo conectar con Serena.Api. Revisa su terminal y vuelve a intentarlo.')
     } finally {
@@ -264,18 +242,18 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
             <div className="relative mx-auto flex max-h-[68vh] min-h-[40vh] w-full flex-1 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-2xl">
               <video
                 ref={narrativeVideoRef}
-                src={videoSource}
+                src={NARRATIVE_VIDEO}
                 preload="auto"
                 playsInline
                 onLoadedMetadata={(event) => {
                   const video = event.currentTarget
                   const duration = Number.isFinite(video.duration) ? video.duration : 0
-                  if (videoSource === NARRATIVE_VIDEO) setMediaDuration(duration)
+                  setMediaDuration(duration)
                   // Si se vuelve a la etapa 2/3 desde la 4, se muestra borroso el final de la narrativa.
                   if (isBlurredStage && duration > 0) video.currentTime = Math.max(0, duration - 0.1)
                 }}
                 className={'h-full max-h-[68vh] w-full object-contain transition-[filter,transform] duration-700 ' + (isBlurredStage ? 'scale-105 blur-[6px]' : '')}
-                aria-label={state.stage === 4 ? 'Video de la consecuencia de la decisión del grupo' : 'Video de la narrativa proyectado para el grupo'}
+                aria-label="Video de la narrativa proyectado para el grupo"
               />
               {isBlurredStage && (
                 <div className="absolute inset-0 grid place-items-center bg-black/30 px-6 text-center">
@@ -284,22 +262,26 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
                   </h2>
                 </div>
               )}
-              {state.stage === 4 && (
-                <p className="absolute left-4 top-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold">
-                  {leadingDecision ? 'Decisión del grupo: ' + leadingDecision : 'No se registraron decisiones del grupo.'}
-                </p>
-              )}
-              {videoNeedsGesture && (state.stage === 1 || state.stage === 4) && (
+              {videoNeedsGesture && state.stage === 1 && (
                 <button type="button" onClick={() => {
                   const video = narrativeVideoRef.current
                   if (video) void video.play().then(() => setVideoNeedsGesture(false)).catch(() => setError('El navegador bloqueó la reproducción del video.'))
                 }} className="absolute rounded-xl bg-red-600 px-6 py-4 text-lg font-bold shadow-xl hover:bg-red-700">
-                  {state.stage === 4 ? 'Reproducir video de la decisión' : 'Reproducir video de la narrativa'}
+                  Reproducir video de la narrativa
                 </button>
               )}
             </div>
           )}
-          <div className={showsStageVideo ? 'hidden' : 'grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl'}>
+          {state.stage === 4 && (
+            <div className="grid min-h-[40vh] flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#2b2b2b] to-[#151515] px-6 py-10 text-center shadow-2xl">
+              <div className="max-w-3xl">
+                <p className="text-6xl" aria-hidden="true">📱</p>
+                <h2 className="mt-5 text-4xl font-black leading-tight sm:text-6xl">Mira el video en tu tablet</h2>
+                <p className="mx-auto mt-4 max-w-2xl text-lg text-white/80 sm:text-2xl">Cada estudiante ve lo que ocurre con la decisión que eligió.</p>
+              </div>
+            </div>
+          )}
+          <div className={showsStageVideo || state.stage === 4 ? 'hidden' : 'grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl'}>
             <div className="max-w-4xl">
               <p className="text-7xl font-black text-red-400 sm:text-9xl">{state.stage}</p>
               <h2 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">{state.stageLabel}</h2>
@@ -338,8 +320,9 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               </div>
             </aside>
           )}
-          {state.stage === 1 && (
-            <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Controles del video de la narrativa en la proyección">
+          {hasMediaControls && (
+            <div className="mx-auto mt-4 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label={state.stage === 4 ? 'Controles del video de la decisión en las tablets' : 'Controles del video de la narrativa en la proyección'}>
+              {state.stage === 4 && <p className="w-full text-center text-sm text-white/70">Estos controles se aplican al video de todas las tablets.</p>}
               <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Atrasar cinco segundos">−5 s</button>
               <button type="button" onClick={() => void controlMedia(state.mediaPaused ? 'play' : 'pause')} disabled={isControllingMedia} className="min-w-40 rounded-lg bg-red-600 px-5 py-3 font-semibold hover:bg-red-700 disabled:opacity-50">{state.mediaPaused ? 'Reanudar' : 'Pausar'}</button>
               <button type="button" onClick={() => void controlMedia('forward-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Adelantar cinco segundos">+5 s</button>
@@ -349,7 +332,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
                 <input type="range" min="0" max="100" value={state.volumePercent} onChange={(event) => controlVolume(Number(event.target.value))} aria-label="Volumen de la narrativa" className="w-24 cursor-pointer accent-red-500" />
                 <span className="w-9 text-right tabular-nums">{state.volumePercent}%</span>
               </label>
-              <div className="w-full space-y-1 px-1" aria-label="Progreso del video de la narrativa">
+              {state.stage === 1 && <div className="w-full space-y-1 px-1" aria-label="Progreso del video de la narrativa">
                 <div role="progressbar" aria-label="Progreso del video" aria-valuemin={0} aria-valuemax={mediaDurationSeconds || undefined} aria-valuenow={Math.min(mediaTime, mediaDurationSeconds || mediaTime)} className="h-2 overflow-hidden rounded-full bg-white/20">
                   <div className="h-full rounded-full bg-red-500 transition-[width] duration-300" style={{ width: `${mediaProgress}%` }} />
                 </div>
@@ -357,7 +340,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
                   <span>{mediaTimeLabel}</span>
                   <span>{mediaDuration > 0 ? mediaDurationLabel : '--:--'}</span>
                 </div>
-              </div>
+              </div>}
             </div>
           )}
           <nav aria-label="Controles de avance de la narrativa" className="mx-auto mt-5 flex w-full max-w-2xl gap-3">

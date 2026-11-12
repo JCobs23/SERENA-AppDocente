@@ -233,7 +233,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
       setSessionReport(report)
       setIsSummaryOpen(true)
     } catch {
-      setActionError('No se pudo guardar el reporte grupal. La sesiÃ³n sigue activa; vuelve a intentarlo.')
+      setActionError('No se pudo guardar el reporte grupal. La sesión sigue activa; vuelve a intentarlo.')
     } finally {
       setIsCreatingReport(false)
     }
