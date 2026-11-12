@@ -34,6 +34,21 @@ const initialState: ProjectionState = {
   advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
 }
 
+const NARRATIVE_VIDEO = '/videos/narrativa-inicial.mp4'
+const DECISION_VIDEOS: Record<string, string> = {
+  'Dialogar directamente': '/videos/Decision_DialogarDirectamente.mp4',
+  'Evitar involucrarse': '/videos/Decision_EvitarInvolucrarse.mp4',
+  'Difundir el rumor': '/videos/Decision_DifundirRumor.mp4',
+  'Cambiar el tema': '/videos/Decision_CambiarTema.mp4',
+}
+
+// Etapa 4: se proyecta la consecuencia de la decisión con más votos del grupo.
+function getLeadingDecision(counts: Record<string, number>) {
+  return Object.entries(counts)
+    .filter(([decision, count]) => DECISION_VIDEOS[decision] && count > 0)
+    .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null
+}
+
 export default function ProjectionScreen({ sessionCode }: { sessionCode: string }) {
   const [state, setState] = useState(initialState)
   const [error, setError] = useState('')
@@ -51,6 +66,10 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const groupedValues = interactionKind === 'emotion' ? (state.emotionCounts ?? {}) : (state.decisionCounts ?? {})
   const responseCount = Object.values(groupedValues).reduce((total, count) => total + count, 0)
   const highestCount = Math.max(0, ...Object.values(groupedValues))
+  const showsStageVideo = state.stage >= 1 && state.stage <= 4
+  const isBlurredStage = state.stage === 2 || state.stage === 3
+  const leadingDecision = state.stage === 4 ? getLeadingDecision(state.decisionCounts ?? {}) : null
+  const videoSource = leadingDecision ? DECISION_VIDEOS[leadingDecision] : NARRATIVE_VIDEO
 
   useEffect(() => {
     const video = narrativeVideoRef.current
@@ -63,9 +82,21 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
 
   useEffect(() => {
     const video = narrativeVideoRef.current
-    if (!video || state.stage !== 1) return
+    if (!video || !showsStageVideo) return
 
     video.volume = Math.min(1, Math.max(0, state.volumePercent / 100))
+    // Etapas 2 y 3: el video queda congelado y borroso de fondo mientras el grupo responde.
+    if (isBlurredStage || (state.stage === 4 && !leadingDecision)) {
+      video.pause()
+      setVideoNeedsGesture(false)
+      return
+    }
+    if (state.stage === 4) {
+      void video.play()
+        .then(() => setVideoNeedsGesture(false))
+        .catch(() => setVideoNeedsGesture(true))
+      return
+    }
     if (state.mediaPaused) {
       video.pause()
       setVideoNeedsGesture(false)
@@ -75,7 +106,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     void video.play()
       .then(() => setVideoNeedsGesture(false))
       .catch(() => setVideoNeedsGesture(true))
-  }, [state.stage, state.mediaPaused, state.volumePercent])
+  }, [state.stage, state.mediaPaused, state.volumePercent, showsStageVideo, isBlurredStage, leadingDecision, videoSource])
 
   useEffect(() => {
     let active = true
@@ -229,28 +260,46 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               {[1, 2, 3, 4, 5].map((step) => <span key={step} className={'h-2 w-8 rounded-full ' + (step <= state.stage ? 'bg-red-500' : 'bg-white/20')} />)}
             </div>
           </div>
-          {state.stage === 1 && (
+          {showsStageVideo && (
             <div className="relative mx-auto flex max-h-[68vh] min-h-[40vh] w-full flex-1 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-2xl">
               <video
                 ref={narrativeVideoRef}
-                src="/videos/narrativa-inicial.mp4"
+                src={videoSource}
                 preload="auto"
                 playsInline
-                onLoadedMetadata={(event) => setMediaDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-                className="h-full max-h-[68vh] w-full object-contain"
-                aria-label="Video de la narrativa proyectado para el grupo"
+                onLoadedMetadata={(event) => {
+                  const video = event.currentTarget
+                  const duration = Number.isFinite(video.duration) ? video.duration : 0
+                  if (videoSource === NARRATIVE_VIDEO) setMediaDuration(duration)
+                  // Si se vuelve a la etapa 2/3 desde la 4, se muestra borroso el final de la narrativa.
+                  if (isBlurredStage && duration > 0) video.currentTime = Math.max(0, duration - 0.1)
+                }}
+                className={'h-full max-h-[68vh] w-full object-contain transition-[filter,transform] duration-700 ' + (isBlurredStage ? 'scale-105 blur-[6px]' : '')}
+                aria-label={state.stage === 4 ? 'Video de la consecuencia de la decisión del grupo' : 'Video de la narrativa proyectado para el grupo'}
               />
-              {videoNeedsGesture && (
+              {isBlurredStage && (
+                <div className="absolute inset-0 grid place-items-center bg-black/30 px-6 text-center">
+                  <h2 className="text-4xl font-black leading-tight drop-shadow-[0_3px_18px_rgba(0,0,0,0.8)] sm:text-6xl">
+                    {state.stage === 2 ? '¿Qué emoción sientes ahora?' : '¿Qué harás?'}
+                  </h2>
+                </div>
+              )}
+              {state.stage === 4 && (
+                <p className="absolute left-4 top-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold">
+                  {leadingDecision ? 'Decisión del grupo: ' + leadingDecision : 'No se registraron decisiones del grupo.'}
+                </p>
+              )}
+              {videoNeedsGesture && (state.stage === 1 || state.stage === 4) && (
                 <button type="button" onClick={() => {
                   const video = narrativeVideoRef.current
                   if (video) void video.play().then(() => setVideoNeedsGesture(false)).catch(() => setError('El navegador bloqueó la reproducción del video.'))
                 }} className="absolute rounded-xl bg-red-600 px-6 py-4 text-lg font-bold shadow-xl hover:bg-red-700">
-                  Reproducir video de la narrativa
+                  {state.stage === 4 ? 'Reproducir video de la decisión' : 'Reproducir video de la narrativa'}
                 </button>
               )}
             </div>
           )}
-          <div className={state.stage === 1 ? 'hidden' : 'grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl'}>
+          <div className={showsStageVideo ? 'hidden' : 'grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl'}>
             <div className="max-w-4xl">
               <p className="text-7xl font-black text-red-400 sm:text-9xl">{state.stage}</p>
               <h2 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">{state.stageLabel}</h2>
