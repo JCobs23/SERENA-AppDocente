@@ -67,6 +67,16 @@ sealed class SerenaDatabase(string databasePath)
                 PRIMARY KEY (SessionCode, StudentId),
                 FOREIGN KEY (SessionCode, StudentId) REFERENCES Students(SessionCode, StudentId) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS SessionReports (
+                ReportId TEXT PRIMARY KEY,
+                SessionCode TEXT NOT NULL UNIQUE,
+                TeacherEmail TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                SummaryJson TEXT NOT NULL,
+                Pdf BLOB NOT NULL,
+                SentTo TEXT,
+                SentAt TEXT
+            );
             CREATE INDEX IF NOT EXISTS IX_ClassroomSessions_CreatedAt ON ClassroomSessions(CreatedAt);
             PRAGMA user_version = 1;
             """;
@@ -305,6 +315,114 @@ sealed class SerenaDatabase(string databasePath)
         }
         return sessions;
     }
+
+    public StoredSessionReport SaveReport(SessionReportSummary summary, byte[] pdf)
+    {
+        var summaryJson = System.Text.Json.JsonSerializer.Serialize(
+            summary, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        using var connection = Open();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                INSERT OR IGNORE INTO SessionReports
+                    (ReportId, SessionCode, TeacherEmail, CreatedAt, SummaryJson, Pdf)
+                VALUES ($id, $code, $teacher, $createdAt, $summary, $pdf);
+                """;
+            command.Parameters.AddWithValue("$id", summary.ReportId);
+            command.Parameters.AddWithValue("$code", summary.SessionCode);
+            command.Parameters.AddWithValue("$teacher", GetTeacherForSession(connection, summary.SessionCode));
+            command.Parameters.AddWithValue("$createdAt", summary.CreatedAt.ToString("O"));
+            command.Parameters.AddWithValue("$summary", summaryJson);
+            command.Parameters.AddWithValue("$pdf", pdf);
+            command.ExecuteNonQuery();
+        }
+
+        return GetReportBySessionCode(connection, summary.SessionCode)
+            ?? throw new InvalidOperationException("The generated report could not be loaded.");
+    }
+
+    public void MarkReportSent(string reportId, string recipient, DateTimeOffset sentAt)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE SessionReports SET SentTo = $recipient, SentAt = $sentAt WHERE ReportId = $id;";
+        command.Parameters.AddWithValue("$recipient", recipient);
+        command.Parameters.AddWithValue("$sentAt", sentAt.ToString("O"));
+        command.Parameters.AddWithValue("$id", reportId);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException("The sent report could not be updated.");
+    }
+    public StoredSessionReport? GetReportBySessionCode(string sessionCode)
+    {
+        using var connection = Open();
+        return GetReportBySessionCode(connection, sessionCode);
+    }
+
+    public StoredSessionReport? GetReportForTeacher(string reportId, string teacherEmail)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ReportId, SessionCode, CreatedAt, TeacherEmail, SummaryJson, Pdf, SentTo, SentAt
+            FROM SessionReports WHERE ReportId = $id AND TeacherEmail = $teacher;
+            """;
+        command.Parameters.AddWithValue("$id", reportId);
+        command.Parameters.AddWithValue("$teacher", teacherEmail);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadStoredReport(reader) : null;
+    }
+
+    public List<SessionReportListItem> GetReportsForTeacher(string teacherEmail)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ReportId, SessionCode, CreatedAt, SummaryJson, SentTo, SentAt
+            FROM SessionReports WHERE TeacherEmail = $teacher ORDER BY CreatedAt DESC;
+            """;
+        command.Parameters.AddWithValue("$teacher", teacherEmail);
+        using var reader = command.ExecuteReader();
+        var reports = new List<SessionReportListItem>();
+        while (reader.Read())
+        {
+            var summary = System.Text.Json.JsonSerializer.Deserialize<SessionReportSummary>(reader.GetString(3),
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+            if (summary is null)
+                continue;
+            reports.Add(new SessionReportListItem(reader.GetString(0), reader.GetString(1),
+                DateTimeOffset.Parse(reader.GetString(2)), summary.Status, summary.ParticipantCount,
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : DateTimeOffset.Parse(reader.GetString(5))));
+        }
+        return reports;
+    }
+
+    private static string GetTeacherForSession(SqliteConnection connection, string sessionCode)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT TeacherEmail FROM ClassroomSessions WHERE Code = $code;";
+        command.Parameters.AddWithValue("$code", sessionCode);
+        return command.ExecuteScalar() as string
+            ?? throw new InvalidOperationException("The session has no teacher record.");
+    }
+
+    private static StoredSessionReport? GetReportBySessionCode(SqliteConnection connection, string sessionCode)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ReportId, SessionCode, CreatedAt, TeacherEmail, SummaryJson, Pdf, SentTo, SentAt
+            FROM SessionReports WHERE SessionCode = $code;
+            """;
+        command.Parameters.AddWithValue("$code", sessionCode);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadStoredReport(reader) : null;
+    }
+
+    private static StoredSessionReport ReadStoredReport(SqliteDataReader reader) => new(
+        reader.GetString(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2)),
+        reader.GetString(3), reader.GetString(4), (byte[])reader[5],
+        reader.IsDBNull(6) ? null : reader.GetString(6),
+        reader.IsDBNull(7) ? null : DateTimeOffset.Parse(reader.GetString(7)));
 
     private static string? ReadNullable(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);

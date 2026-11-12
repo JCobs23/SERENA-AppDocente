@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -65,6 +66,7 @@ var databasePath = Path.IsPathRooted(configuredDatabasePath)
     : Path.Combine(apiContentRoot, configuredDatabasePath);
 var database = new SerenaDatabase(databasePath);
 database.Initialize(ReadTeacherUsers(usersPath));
+var reportService = new SessionReportService(database, builder.Configuration);
 foreach (var snapshot in database.LoadSessions(DateTimeOffset.UtcNow, sessionLifetime))
     sessions[snapshot.Code] = ClassroomSession.Restore(snapshot);
 
@@ -324,10 +326,93 @@ app.MapPost("/api/sessions/{code}/reset", async (HttpContext context, string cod
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
 
+    if (session.GetNarrativeState().Started)
+        reportService.CreateOrGet(session);
     session.ResetNarrative();
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
     return Results.Ok(state);
+});
+
+app.MapPost("/api/sessions/{code}/report", (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound();
+    if (!session.GetNarrativeState().Started)
+        return Results.Conflict(new { message = "The narrative has not started." });
+
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(reportService.CreateOrGet(session));
+});
+
+app.MapGet("/api/reports/recipients", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out _))
+        return Results.Unauthorized();
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(new { recipients = reportService.AuthorizedRecipients });
+});
+
+app.MapPost("/api/reports/{reportId}/send", async (HttpContext context, string reportId, SendReportRequest request, CancellationToken cancellationToken) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!System.Net.Mail.MailAddress.TryCreate(request.Recipient, out var recipient)
+        || !reportService.AuthorizedRecipients.Contains(recipient.Address, StringComparer.OrdinalIgnoreCase))
+        return Results.BadRequest(new { message = "El correo no está configurado como destinatario autorizado." });
+
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    if (stored is null)
+        return Results.NotFound();
+
+    try
+    {
+        await reportService.SendAsync(stored, recipient.Address, cancellationToken);
+        var sentAt = DateTimeOffset.UtcNow;
+        database.MarkReportSent(reportId, recipient.Address, sentAt);
+        return Results.Ok(new { sent = true, recipient = recipient.Address, subject = "Informe estudiantes", sentAt });
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Problem(title: "Correo no configurado", detail: exception.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception)
+    {
+        return Results.Problem(title: "No se pudo enviar el informe", detail: "Revisa la configuración SMTP y vuelve a intentarlo.", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+app.MapGet("/api/reports", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(database.GetReportsForTeacher(teacher.Email));
+});
+
+app.MapGet("/api/reports/{reportId}", (HttpContext context, string reportId) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    if (stored is null)
+        return Results.NotFound();
+    var summary = JsonSerializer.Deserialize<SessionReportSummary>(stored.SummaryJson,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    context.Response.Headers.CacheControl = "no-store";
+    return summary is null ? Results.Problem("The stored report is invalid.") : Results.Ok(summary);
+});
+
+app.MapGet("/api/reports/{reportId}/pdf", (HttpContext context, string reportId) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    return stored is null
+        ? Results.NotFound()
+        : Results.File(stored.Pdf, "application/pdf", $"SERENA-{stored.SessionCode}.pdf");
 });
 
 app.MapPost("/api/sessions/{code}/skip-intro", async (HttpContext context, string code) =>
@@ -398,6 +483,7 @@ app.MapPost("/api/sessions/{code}/media/volume", async (HttpContext context, str
 });
 app.MapPost("/api/sessions/{code}/advance-mode", async (HttpContext context, string code, AdvanceModeRequest request) =>
 {
+    var responseTimer = Stopwatch.StartNew();
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
         return Results.Unauthorized();
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
@@ -407,6 +493,7 @@ app.MapPost("/api/sessions/{code}/advance-mode", async (HttpContext context, str
         return Results.BadRequest(new { message = "Mode must be 'automatic' or 'vote'." });
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
+    context.Response.Headers["Server-Timing"] = $"final-decision;dur={responseTimer.Elapsed.TotalMilliseconds:0.##}";
     return Results.Ok(state);
 });
 app.MapGet("/api/sessions/{code}/interactions", (HttpContext context, string code) =>
@@ -523,6 +610,7 @@ sealed record TeacherCredential(string Email, string Salt, string PasswordHash, 
 sealed record TeacherSession(string Email, DateTimeOffset ExpiresAt);
 sealed record LoginAttemptWindow(DateTimeOffset StartedAt, int Count);
 sealed record LoginRequest(string? Email, string? Password);
+sealed record SendReportRequest(string? Recipient);
 sealed record JoinRequest(string? Name, string? StudentId = null);
 sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);

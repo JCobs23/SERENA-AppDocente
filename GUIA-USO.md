@@ -26,7 +26,7 @@ Hazlo una sola vez o cuando quieras cambiar la contraseña. Desde la raíz del r
 .\Serena.Api\create-teacher.ps1
 ```
 
-Ingresa un correo `@gmail.com` y una contraseña de al menos 12 caracteres. PowerShell oculta la contraseña mientras escribes. El asistente genera `Serena.Api/Data/teachers.json` con una sal aleatoria y el hash PBKDF2; al iniciar, la API importa esas credenciales a SQLite (`Serena.Api/Data/serena.db`). La contraseña no se guarda en texto plano. No hay cuentas precargadas.
+Ingresa un correo `@gmail.com` y una contraseña de al menos 12 caracteres. PowerShell oculta la contraseña mientras escribes. El asistente genera `Serena.Api/Data/teachers.json` con una sal aleatoria y el hash PBKDF2; al iniciar, la API importa esas credenciales a SQLite (`Serena.Api/Data/serena.db`). La contraseña no se guarda en texto plano. El acceso de demostracion prepara las diez cuentas descritas al final de esta guia.
 
 ## 3. Instalar dependencias
 
@@ -44,6 +44,8 @@ cd "D:\Usefull\Documentos\GitHub\SERENA-AppDocente"
 ```
 
 ## 4. Iniciar los servicios, desde cero
+
+Para abrir todo con un único acceso en Windows, compila `launcher/build-exe.ps1` y ejecuta `dist/serena-docente/Serena-Docente.exe`. El ejecutable inicia la API, el backend y Vite, espera a que la aplicación web responda y abre el navegador. Al cerrar el cuadro de Serena, también cierra los procesos iniciados. Requiere .NET SDK, Node.js y dependencias instaladas. Si el inicio falla, usa las tres terminales de abajo para ver el error de cada servicio.
 
 Necesitas **tres terminales PowerShell separadas** en VS Code. En cada una, confirma que la carpeta actual sea `D:\Usefull\Documentos\GitHub\SERENA-AppDocente`. No cierres estas terminales durante la prueba.
 
@@ -118,3 +120,15 @@ El login se envía desde Vite local a la API por TLS, pero el proxy de desarroll
 6. Cuando todas las tablets terminen la introducción, la API avanza a la Etapa 1 y cada tablet reproduce `SerenaNarrativa.mp4` desde `3_Narrativa`. Durante la experiencia, controla el video desde la proyección con **Pausar**, **Reanudar**, **atrasar 5 s** y **adelantar 5 s**. Ambas pantallas muestran una barra de progreso y el tiempo actual/duración: en la proyección debajo de los controles y en la tablet al pie de la pantalla. Al pausar, la tablet conserva el fotograma actual desenfocado mientras espera; al terminar el video, conserva el último fotograma borroso hasta que el docente avance. En la Etapa 2, la tablet mantiene ese fondo borroso y presenta cinco tarjetas para que cada estudiante toque la emoción que siente; la tarjeta elegida queda marcada y se puede cambiar mientras siga en esa etapa. Para usar las ilustraciones adjuntas, crea `Assets/Resources/Emociones/` en el proyecto Unity y copia ahí los cinco PNG con estos nombres: `curiosidad.png`, `fuera.png`, `neutro.png`, `confundido.png` e `incomodo.png`. El script los carga automáticamente; no los arrastres a la escena ni configures objetos en el Inspector. Si falta un archivo, esa tarjeta usa el emoji de respaldo. Para agregar o reemplazar el video, copia `frontend/public/videos/narrativa-inicial.mp4` como `Assets/StreamingAssets/SerenaNarrativa.mp4` (MP4/H.264 recomendado). Los cambios visuales en Unity requieren generar e instalar un build Android actualizado antes de la siguiente prueba; estos cambios no requieren reiniciar Serena.Api.
 7. Para interrumpir la introducción o una etapa y volver al catálogo, pulsa **Volver a escoger capítulos** en la proyección o **Volver a capítulos** en la sala docente. La web envía `POST /api/sessions/{code}/reset`; la API termina la experiencia de esa sesión.
 8. Al volver el docente al catálogo, Unity detecta el reinicio, detiene el video o la etapa, limpia el código y carga `1_IngresoCodigo`. No hacen falta comandos ni reinicios durante este flujo normal. Solo instala otro build Android si actualizaste los scripts de Unity; consulta la sección 4.
+
+## Inicio con doble clic y cuentas de prueba
+
+En Windows, ejecuta **Iniciar Serena.cmd** en la raíz del proyecto. La primera vez instala las dependencias de Node que falten, prepara las cuentas e intenta crear el ejecutable portátil del lanzador. Necesita .NET SDK 10 y Node.js LTS; npm instala paquetes por internet si todavía no están descargados. La API, el backend y la interfaz deben permanecer abiertos mientras se usa la aplicación. Cierra el cuadro del lanzador al terminar para detener los servicios.
+
+Se crean en SQLite las cuentas profesor1@gmail.com hasta profesor10@gmail.com. Todas usan la contraseña 123456789abc. El archivo local Serena.Api/Data/teachers.json guarda únicamente sales y hashes PBKDF2; al iniciar, la API importa o actualiza esas credenciales en Serena.Api/Data/serena.db. El archivo de base de datos se mantiene en este computador y no se incluye en Git.
+
+## Envío del informe por correo
+
+El reporte final tiene el botón **Enviar informe** y adjunta el PDF con el asunto **Informe estudiantes**. El destinatario configurado es `javierlainv@gmail.com`; también se aprovisiona como cuenta docente de demostración con la contraseña `123456789abc`.
+
+Para habilitar el envío real por Gmail, crea una contraseña de aplicación para `javierlainv@gmail.com` y configura la variable de entorno de Windows con `setx SERENA_REPORTS_SMTP_PASSWORD "TU_CONTRASENA_DE_APLICACION"` y reemplaza el texto de ejemplo por la contraseña de aplicación. No uses ni guardes la contraseña normal de Gmail en el repositorio. Cierra y vuelve a iniciar Serena después de configurar la variable. Sin la contraseña de aplicación el botón mostrará que falta la configuración SMTP y no marcará el mensaje como enviado.

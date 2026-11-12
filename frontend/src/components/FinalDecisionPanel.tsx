@@ -32,7 +32,13 @@ function playConfirmationTone(context: AudioContext) {
 }
 
 export default function FinalDecisionPanel({ state, busy, error, onSelect, onFinish }: Props) {
+  const [pendingMode, setPendingMode] = useState<AdvanceMode | null>(null)
+  const [responseTimeMs, setResponseTimeMs] = useState<number | null>(null)
+
   async function choose(mode: AdvanceMode) {
+    setPendingMode(mode)
+    setResponseTimeMs(null)
+    const startedAt = performance.now()
     let audio: AudioContext | undefined
     try {
       const AudioContextConstructor = window.AudioContext
@@ -46,14 +52,17 @@ export default function FinalDecisionPanel({ state, busy, error, onSelect, onFin
 
     const confirmed = await onSelect(mode)
     if (!confirmed) {
+      setPendingMode(null)
       if (audio && audio.state !== 'closed') void audio.close()
       return
     }
+    setPendingMode(null)
+    setResponseTimeMs(Math.round(performance.now() - startedAt))
     if (audio && audio.state === 'running') playConfirmationTone(audio)
   }
 
-  const selectedContinue = state.finalDecision === 'continue'
-  const selectedVote = state.finalDecision === 'vote' && state.votingOpen
+  const selectedContinue = pendingMode === 'automatic' || state.finalDecision === 'continue'
+  const selectedVote = pendingMode === 'vote' || (state.finalDecision === 'vote' && state.votingOpen)
 
   return (
     <section aria-labelledby="final-decision-title" className="mx-auto w-full max-w-4xl rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-9">
@@ -76,15 +85,17 @@ export default function FinalDecisionPanel({ state, busy, error, onSelect, onFin
 
       {selectedContinue && (
         <div role="status" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <p className="text-sm font-semibold text-emerald-950">Decisión confirmada. La sesión continúa sin consultar al grupo.</p>
-          <button type="button" onClick={onFinish} disabled={busy} className="rounded-lg bg-emerald-800 px-4 py-2 font-semibold text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-900 disabled:opacity-60">Finalizar y volver al catálogo</button>
+          <p className="text-sm font-semibold text-emerald-950">{pendingMode === 'automatic' ? 'Aplicando decisión…' : 'Decisión confirmada. La sesión continúa sin consultar al grupo.'}</p>
+          <p className="text-xs text-emerald-800">{pendingMode === 'automatic' ? 'Aplicando la decisión…' : responseTimeMs !== null ? `Respuesta confirmada en ${responseTimeMs} ms` : ''}</p>
+          <button type="button" onClick={onFinish} disabled={busy} className="rounded-lg bg-emerald-800 px-4 py-2 font-semibold text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-900 disabled:opacity-60">Ver reporte grupal</button>
         </div>
       )}
 
       {selectedVote && (
         <div role="status" aria-live="polite" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
-          <p>Votos recibidos: {state.continueVotes} continuar · {state.alternativeVotes} explorar otra decisión</p>
-          <button type="button" onClick={onFinish} disabled={busy} className="rounded-lg bg-rose-800 px-4 py-2 text-white hover:bg-rose-900 disabled:opacity-60">Cerrar sesión y ver resumen</button>
+          <p>{pendingMode === 'vote' ? 'Aplicando decisión…' : `Votos recibidos: ${state.continueVotes} continuar · ${state.alternativeVotes} explorar otra decisión`}</p>
+          {responseTimeMs !== null && <span className="text-xs text-rose-800">Respuesta confirmada en {responseTimeMs} ms</span>}
+          <button type="button" onClick={onFinish} disabled={busy} className="rounded-lg bg-rose-800 px-4 py-2 text-white hover:bg-rose-900 disabled:opacity-60">Cerrar sesión y ver reporte</button>
         </div>
       )}
       {busy && <p role="status" className="mt-4 text-sm text-stone-600">Guardando la decisión…</p>}
@@ -92,3 +103,5 @@ export default function FinalDecisionPanel({ state, busy, error, onSelect, onFin
     </section>
   )
 }
+import { useState } from 'react'
+

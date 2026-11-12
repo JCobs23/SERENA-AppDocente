@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
-
 type CatalogScreenProps = {
   onNarrativeSelect: () => void
+  onOpenReports: () => void
   teacherEmail: string
   onLogout: () => void
   isCreatingSession: boolean
@@ -63,27 +62,25 @@ function NarrativeCover({ source, title }: { source?: string; title: string }) {
   return <img src={source} alt={`Portada de ${title}`} onError={(event) => { event.currentTarget.style.display = 'none' }} className="absolute inset-0 h-full w-full object-cover" />
 }
 
-export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogout, isCreatingSession, sessionError }: CatalogScreenProps) {
-  const [covers, setCovers] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    let cancelled = false
-
-    // En desarrollo Vite redirige esta ruta al servidor de portadas. Así el
-    // catálogo también funciona si Vite elige un puerto distinto de 5173.
-    fetch(import.meta.env.VITE_MEDIA_SERVER_URL ?? '/covers-manifest')
-      .then(async (response) => response.ok ? response.json() as Promise<{ covers: Record<string, string> }> : Promise.reject())
-      .then((manifest) => { if (!cancelled) setCovers(manifest.covers) })
-      .catch(() => { /* El catálogo conserva el fondo oscuro si no hay una portada disponible. */ })
-
-    return () => { cancelled = true }
-  }, [])
+export default function CatalogScreen({ onNarrativeSelect, onOpenReports, teacherEmail, onLogout, isCreatingSession, sessionError }: CatalogScreenProps) {
+  const covers: Record<string, string> = {
+    '1': '/ImagenesCapitulos/Capitulo%201/cover%20-%20copia.png',
+    '2': '/ImagenesCapitulos/Capitulo%202/cover2.jpg',
+    '3': '/ImagenesCapitulos/Capitulo%203/cover3.jpg',
+    '4': '/ImagenesCapitulos/Capitulo%204/cover4.jpg',
+    '5': '/ImagenesCapitulos/Capitulo%205/cover5.jpg',
+    '6': '/ImagenesCapitulos/Capitulo%206/cover6.jpg',
+    '7': '/ImagenesCapitulos/Capitulo%207/cover7.jpg',
+    '8': '/ImagenesCapitulos/Capitulo%208/cover8.jpg',
+    '9': '/ImagenesCapitulos/Capitulo%209/cover9.jpg',
+    '10': '/ImagenesCapitulos/Capitulo%2010/cover10.jpg',
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-950">
       <header className="flex h-11 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
         <span className="text-lg font-bold tracking-tight text-red-700">Serena</span>
-        <div className="flex items-center gap-3"><span className="hidden text-xs text-gray-600 sm:inline">{teacherEmail}</span><button type="button" onClick={onLogout} aria-label="Cerrar sesión" title="Cerrar sesión" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"><UserIcon /></button></div>
+        <div className="flex items-center gap-3"><button type="button" onClick={onOpenReports} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100">Reportes anteriores</button><span className="hidden text-xs text-gray-600 sm:inline">{teacherEmail}</span><button type="button" onClick={onLogout} aria-label="Cerrar sesión" title="Cerrar sesión" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"><UserIcon /></button></div>
       </header>
 
       <div className="space-y-10 px-4 py-9 sm:px-6 lg:px-8">

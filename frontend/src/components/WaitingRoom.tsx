@@ -3,6 +3,7 @@ import { apiRequest, ApiError } from '../lib/api'
 import SupervisionPanel, { type SupervisionStudent } from './SupervisionPanel'
 import FinalDecisionPanel from './FinalDecisionPanel'
 import SessionSummary from './SessionSummary'
+import type { SessionReport } from '../lib/reports'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
 type StudentInteraction = SupervisionStudent
@@ -86,6 +87,8 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [studentInteractions, setStudentInteractions] = useState<StudentInteraction[]>([])
   const [isSupervisionOpen, setIsSupervisionOpen] = useState(true)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
+  const [isCreatingReport, setIsCreatingReport] = useState(false)
+  const [sessionReport, setSessionReport] = useState<SessionReport | null>(null)
 
   const [actionError, setActionError] = useState('')
   const [projectionPath, setProjectionPath] = useState('')
@@ -222,12 +225,26 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     finally { setIsReturning(false) }
   }
 
+  async function openSessionReport() {
+    setIsCreatingReport(true)
+    setActionError('')
+    try {
+      const report = await apiRequest<SessionReport>('/sessions/' + sessionCode + '/report', { method: 'POST' })
+      setSessionReport(report)
+      setIsSummaryOpen(true)
+    } catch {
+      setActionError('No se pudo guardar el reporte grupal. La sesiÃ³n sigue activa; vuelve a intentarlo.')
+    } finally {
+      setIsCreatingReport(false)
+    }
+  }
+
 
   const connectionCode = sessionCode.match(/.{1,3}/g)?.join(' ') ?? sessionCode
 
   return (
-    isSummaryOpen
-      ? <SessionSummary students={studentInteractions} votes={{ continue: narrativeState.continueVotes, alternative: narrativeState.alternativeVotes }} onFinish={() => void returnToChapters()} />
+    isSummaryOpen && sessionReport
+      ? <SessionSummary report={sessionReport} onFinish={() => void returnToChapters()} />
       :
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
@@ -259,7 +276,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
 
       <section className={'mx-auto w-full ' + (isFinalDecision ? 'mt-10 max-w-4xl sm:mt-16' : 'mt-12 max-w-5xl sm:mt-20')}>
         {isFinalDecision ? (
-          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning} error={actionError} onSelect={setAdvanceMode} onFinish={() => setIsSummaryOpen(true)} />
+          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning || isCreatingReport} error={actionError} onSelect={setAdvanceMode} onFinish={() => void openSessionReport()} />
         ) : <>
         <header className="text-center">
           <h1 className="text-4xl font-extrabold text-black">Sala de espera</h1>

@@ -43,6 +43,9 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const volumeTimer = useRef<number | undefined>(undefined)
   const [isReturning, setIsReturning] = useState(false)
   const [mediaDuration, setMediaDuration] = useState(0)
+  const [videoNeedsGesture, setVideoNeedsGesture] = useState(false)
+  const narrativeVideoRef = useRef<HTMLVideoElement | null>(null)
+  const appliedMediaRevision = useRef(-1)
   const introPending = state.connectedStudents === 0 || state.introCompletedStudents < state.connectedStudents
   const interactionKind = state.stage === 2 ? 'emotion' : state.stage === 3 ? 'decision' : null
   const groupedValues = interactionKind === 'emotion' ? (state.emotionCounts ?? {}) : (state.decisionCounts ?? {})
@@ -50,22 +53,29 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
   const highestCount = Math.max(0, ...Object.values(groupedValues))
 
   useEffect(() => {
-    let active = true
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    video.src = '/videos/narrativa-inicial.mp4'
-    const readDuration = () => {
-      if (active && Number.isFinite(video.duration)) setMediaDuration(video.duration)
+    const video = narrativeVideoRef.current
+    if (!video || state.stage !== 1 || appliedMediaRevision.current === state.mediaRevision) return
+
+    appliedMediaRevision.current = state.mediaRevision
+    const targetPosition = Math.max(0, state.mediaPositionSeconds || 0)
+    if (Math.abs(video.currentTime - targetPosition) > 1.5) video.currentTime = targetPosition
+  }, [state.stage, state.mediaRevision, state.mediaPositionSeconds])
+
+  useEffect(() => {
+    const video = narrativeVideoRef.current
+    if (!video || state.stage !== 1) return
+
+    video.volume = Math.min(1, Math.max(0, state.volumePercent / 100))
+    if (state.mediaPaused) {
+      video.pause()
+      setVideoNeedsGesture(false)
+      return
     }
-    video.addEventListener('loadedmetadata', readDuration)
-    video.load()
-    return () => {
-      active = false
-      video.removeEventListener('loadedmetadata', readDuration)
-      video.removeAttribute('src')
-      video.load()
-    }
-  }, [])
+
+    void video.play()
+      .then(() => setVideoNeedsGesture(false))
+      .catch(() => setVideoNeedsGesture(true))
+  }, [state.stage, state.mediaPaused, state.volumePercent])
 
   useEffect(() => {
     let active = true
@@ -219,7 +229,28 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               {[1, 2, 3, 4, 5].map((step) => <span key={step} className={'h-2 w-8 rounded-full ' + (step <= state.stage ? 'bg-red-500' : 'bg-white/20')} />)}
             </div>
           </div>
-          <div className="grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl">
+          {state.stage === 1 && (
+            <div className="relative mx-auto flex max-h-[68vh] min-h-[40vh] w-full flex-1 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-2xl">
+              <video
+                ref={narrativeVideoRef}
+                src="/videos/narrativa-inicial.mp4"
+                preload="auto"
+                playsInline
+                onLoadedMetadata={(event) => setMediaDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+                className="h-full max-h-[68vh] w-full object-contain"
+                aria-label="Video de la narrativa proyectado para el grupo"
+              />
+              {videoNeedsGesture && (
+                <button type="button" onClick={() => {
+                  const video = narrativeVideoRef.current
+                  if (video) void video.play().then(() => setVideoNeedsGesture(false)).catch(() => setError('El navegador bloqueó la reproducción del video.'))
+                }} className="absolute rounded-xl bg-red-600 px-6 py-4 text-lg font-bold shadow-xl hover:bg-red-700">
+                  Reproducir video de la narrativa
+                </button>
+              )}
+            </div>
+          )}
+          <div className={state.stage === 1 ? 'hidden' : 'grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl'}>
             <div className="max-w-4xl">
               <p className="text-7xl font-black text-red-400 sm:text-9xl">{state.stage}</p>
               <h2 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">{state.stageLabel}</h2>
@@ -259,7 +290,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
             </aside>
           )}
           {state.stage === 1 && (
-            <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Controles de la narrativa en las tablets">
+            <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Controles del video de la narrativa en la proyección">
               <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Atrasar cinco segundos">−5 s</button>
               <button type="button" onClick={() => void controlMedia(state.mediaPaused ? 'play' : 'pause')} disabled={isControllingMedia} className="min-w-40 rounded-lg bg-red-600 px-5 py-3 font-semibold hover:bg-red-700 disabled:opacity-50">{state.mediaPaused ? 'Reanudar' : 'Pausar'}</button>
               <button type="button" onClick={() => void controlMedia('forward-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Adelantar cinco segundos">+5 s</button>
