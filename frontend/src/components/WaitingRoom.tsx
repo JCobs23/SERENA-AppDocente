@@ -88,18 +88,33 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
 
   const [actionError, setActionError] = useState('')
-  const [projectionPath, setProjectionPath] = useState('')
   const connectedStudents = students.filter((student) => student.connected).length
   const readyStudents = students.filter((student) => student.connected && student.ready).length
   const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 5 ? 'reflection' : narrativeState.stage >= 3 ? 'decision' : null
   const isFinalDecision = narrativeState.narrativeStarted && narrativeState.stage === 5
   const activeInteractions = studentInteractions.filter((student) => student.connected)
   const respondedStudents = activeInteractions.filter((student) => currentInteraction && student[currentInteraction]).length
+  const reflectionParticipants = activeInteractions.length > 0
+    ? activeInteractions
+    : studentInteractions
+  const completedReflections = reflectionParticipants.filter((student) => {
+    const answers = student.reflection?.split(',').map((answer) => answer.trim().toLowerCase()) ?? []
+    return answers.length === 4 && answers.every((answer) => answer === 'yes' || answer === 'no')
+  }).length
+  const allReflectionsSubmitted = reflectionParticipants.length > 0
+    && completedReflections === reflectionParticipants.length
 
   useEffect(() => {
     let disposed = false
     let retryTimer = 0
     let stream: WebSocket | null = null
+    void apiRequest<NarrativeState>('/sessions/' + sessionCode)
+      .then((state) => {
+        if (disposed) return
+        setNarrativeState(state)
+        if (state.narrativeStarted) window.location.replace('/projection/' + sessionCode)
+      })
+      .catch(() => { /* La conexiÃ³n en tiempo real conserva la recuperaciÃ³n si la sesiÃ³n tarda en responder. */ })
     const refreshInteractions = async () => {
       try {
         const current = await apiRequest<StudentInteraction[]>('/sessions/' + sessionCode + '/interactions')
@@ -151,7 +166,6 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   }, [sessionCode])
 
   async function startExperience() {
-    const projectionWindow = window.open('about:blank', '_blank')
     setIsStarting(true)
     setActionError('')
     try {
@@ -159,11 +173,8 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         method: 'POST',
       })
       setNarrativeState(state)
-      const path = '/projection/' + sessionCode
-      setProjectionPath(path)
-      if (projectionWindow) projectionWindow.location.href = path
+      window.location.assign('/projection/' + sessionCode)
     } catch (error) {
-      projectionWindow?.close()
       setActionError(error instanceof ApiError && error.status === 409
         ? (readyStudents < connectedStudents ? 'Espera a que todos los estudiantes conectados estén listos.' : 'Conecta al menos un estudiante para iniciar la experiencia.')
         : 'No se pudo iniciar la narrativa. Revisa la conexión con el servidor.')
@@ -227,7 +238,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
 
   return (
     isSummaryOpen
-      ? <SessionSummary students={studentInteractions} votes={{ continue: narrativeState.continueVotes, alternative: narrativeState.alternativeVotes }} onFinish={() => void returnToChapters()} />
+      ? <SessionSummary students={studentInteractions} votes={{ continue: narrativeState.continueVotes, alternative: narrativeState.alternativeVotes }} onFinish={returnToChapters} />
       :
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
@@ -259,7 +270,16 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
 
       <section className={'mx-auto w-full ' + (isFinalDecision ? 'mt-10 max-w-4xl sm:mt-16' : 'mt-12 max-w-5xl sm:mt-20')}>
         {isFinalDecision ? (
-          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning} error={actionError} onSelect={setAdvanceMode} onFinish={() => setIsSummaryOpen(true)} />
+          <FinalDecisionPanel
+            state={narrativeState}
+            busy={isSettingAdvanceMode || isReturning}
+            error={actionError}
+            canConfirm={allReflectionsSubmitted}
+            completedReflections={completedReflections}
+            reflectionsExpected={reflectionParticipants.length}
+            onSelect={setAdvanceMode}
+            onConfirmFeedback={() => setIsSummaryOpen(true)}
+          />
         ) : <>
         <header className="text-center">
           <h1 className="text-4xl font-extrabold text-black">Sala de espera</h1>
@@ -299,7 +319,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
           <section className="mx-auto mt-7 max-w-2xl rounded-xl border border-gray-200 bg-gray-50 p-5">
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
             <button type="button" onClick={() => void startExperience()} disabled={connectedStudents < 1 || readyStudents < connectedStudents || isStarting} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">
-              {isStarting ? 'Iniciando…' : connectedStudents < 1 ? 'Conecta al menos un estudiante' : readyStudents < connectedStudents ? 'Esperando estudiantes listos (' + readyStudents + '/' + connectedStudents + ')' : 'Iniciar experiencia y abrir proyección'}
+              {isStarting ? 'Iniciando…' : connectedStudents < 1 ? 'Conecta al menos un estudiante' : readyStudents < connectedStudents ? 'Esperando estudiantes listos (' + readyStudents + '/' + connectedStudents + ')' : 'Iniciar experiencia'}
             </button>
           </section>
         ) : (
@@ -309,7 +329,6 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
                 <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Experiencia en curso</p>
                 <h2 className="mt-1 text-lg font-bold">{narrativeState.stage === 0 ? "Introducción en curso" : narrativeState.stageLabel + " · Etapa " + narrativeState.stage + " de 5"}</h2>
               </div>
-              {projectionPath && <a href={projectionPath} target="_blank" rel="noreferrer" className="text-sm font-semibold text-red-700 underline">Abrir proyección</a>}
             </div>
             <p className="mt-3 text-sm text-gray-600">{narrativeState.stageDescription}</p>
             {narrativeState.stage < 5 && (

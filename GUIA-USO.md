@@ -53,6 +53,19 @@ Necesitas **tres terminales PowerShell separadas** en VS Code. En cada una, conf
 dotnet run --project Serena.Api --launch-profile Serena
 ```
 
+Para habilitar **Finalizar y recibir reporte**, configura antes las variables SMTP en esta misma terminal (usa una contraseña de aplicación y no guardes credenciales en el repositorio):
+
+```powershell
+$env:Email__Smtp__Host = "smtp.gmail.com"
+$env:Email__Smtp__Port = "587"
+$env:Email__Smtp__EnableSsl = "true"
+$env:Email__Smtp__User = "tu-correo@gmail.com"
+$env:Email__Smtp__Password = "tu-contraseña-de-aplicación"
+$env:Email__Smtp__From = "tu-correo@gmail.com"
+```
+
+Si SMTP no está configurado, la app mostrará un error claro y no cerrará la sesión.
+
 Déjala abierta. Comprueba que la API responde abriendo `http://localhost:5080/api/health` en el navegador del computador. Debe aparecer `{"status":"ok"}`. Si la página no responde, la API no está iniciada; revisa los mensajes de esta terminal. No intentes iniciar otra copia si el puerto ya está ocupado: detén la instancia anterior con `Ctrl+C` en su terminal y vuelve a ejecutar el comando.
 
 **Terminal 2 — backend Socket.IO:** ejecuta:
