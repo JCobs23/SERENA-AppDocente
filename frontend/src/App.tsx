@@ -38,15 +38,15 @@ function TeacherApp() {
       setScreen('waiting-room')
     } catch (error) {
       setSessionError(error instanceof ApiError && error.status === 401
-        ? 'Tu sesión docente expiró. Vuelve a iniciar sesión.'
-        : 'No se pudo crear la sesión. Revisa que Serena.Api esté activa e inténtalo de nuevo.')
+        ? 'Your teacher session has expired. Please sign in again.'
+        : 'The session could not be created. Check that Serena.Api is running and try again.')
     } finally {
       setIsCreatingSession(false)
     }
   }
 
   async function logout() {
-    try { await apiRequest<void>('/auth/logout', { method: 'POST' }) } catch { /* La sesión local también se cierra. */ }
+    try { await apiRequest<void>('/auth/logout', { method: 'POST' }) } catch { /* The local session is cleared as well. */ }
     setTeacherEmail('')
     setSessionCode('')
     setScreen('login')
@@ -58,7 +58,7 @@ function TeacherApp() {
   }
 
   if (screen === 'checking-session') {
-    return <main className="grid min-h-screen place-items-center text-sm text-gray-500">Cargando Serena…</main>
+    return <main className="grid min-h-screen place-items-center text-sm text-gray-500">Loading Serena…</main>
   }
 
   if (screen === 'login') {

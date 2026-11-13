@@ -29,12 +29,26 @@ type ProjectionState = {
   voteRound: number
 }
 const initialState: ProjectionState = {
-  active: true, narrativeStarted: false, stage: 0, stageLabel: 'En espera',
-  stageDescription: 'Esperando a que el docente inicie la experiencia.',
+  active: true, narrativeStarted: false, stage: 0, stageLabel: 'Waiting',
+  stageDescription: 'Waiting for the teacher to start the experience.',
   revision: 0, mediaPaused: true, mediaPositionSeconds: 0, mediaRevision: 0, mediaCommand: 'pause', volumePercent: 70,
   connectedStudents: 0, participantCount: 0, readyStudents: 0, introCompletedStudents: 0, emotionCounts: {}, decisionCounts: {},
   advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
 }
+const stageTitles = ['Introduction', 'Initial Narrative', 'Recognize the Emotion', 'Choose a Decision', 'See the Consequences', 'Reflect as a Group']
+const stageDescriptions = [
+  'Watch the introductory video before the story begins.',
+  'Observe the situation and understand the context.',
+  'Identify the emotion present in this situation.',
+  'Consider the alternatives and choose how to act.',
+  'Observe how the situation affected everyone involved.',
+  'Share a reflection on what happened.',
+]
+const responseLabels: Record<string, string> = {
+  confundido: 'Confused', curioso: 'Curious', inc\u00f3modo: 'Uncomfortable', 'miedo a la exclusi\u00f3n': 'Fear of exclusion', neutral: 'Neutral',
+  'difundir el rumor': 'Spread the Rumor', 'dialogar directamente': 'Direct Dialogue', 'cambiar el tema': 'Change the Topic', 'evitar involucrarse': 'Avoid Involvement',
+}
+function responseLabel(value: string) { return responseLabels[value.trim().toLocaleLowerCase()] ?? value }
 
 export default function ProjectionScreen({ sessionCode }: { sessionCode: string }) {
   const [state, setState] = useState(initialState)
@@ -90,7 +104,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
           setError('')
         }
       } catch {
-        if (active) setError('No se pudo conectar con la sesión. Esperando al servidor…')
+        if (active) setError('Could not connect to the session. Waiting for the server…')
       } finally {
         if (active) retryTimer = window.setTimeout(() => void refresh(), 700)
       }
@@ -106,7 +120,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
       try {
         const interactions = await apiRequest<SupervisionStudent[]>('/sessions/' + sessionCode + '/interactions')
         if (active) setStudentInteractions(interactions)
-      } catch { /* Conserva las respuestas mÃ¡s recientes mientras vuelve la conexiÃ³n. */ }
+      } catch { /* Keep the latest responses while the connection is restored. */ }
     }
     void refreshInteractions()
     const interval = window.setInterval(() => void refreshInteractions(), 1000)
@@ -123,7 +137,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
       })
       setState(next)
     } catch {
-      setError('No se pudo cambiar la etapa. Verifica que todos hayan terminado la introducción.')
+      setError('Could not change the stage. Make sure everyone has finished the introduction.')
     } finally {
       setIsChangingStage(false)
     }
@@ -138,13 +152,13 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     } catch (error) {
       setError(error instanceof ApiError
         ? error.status === 404
-          ? 'Serena.Api aún no tiene activa la ruta para omitir. Reinicia la API; esto borrará las sesiones actuales.'
+          ? 'The skip-introduction route is not enabled in Serena.Api. Restart the API; this will clear current sessions.'
           : error.status === 409
-            ? 'La introducción ya terminó o no hay estudiantes conectados.'
+            ? 'The introduction has already ended or no students are connected.'
             : error.status === 401
-              ? 'La sesión docente expiró. Inicia sesión de nuevo.'
-              : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.'
-        : 'No se pudo omitir la introducción. Verifica la conexión e inténtalo de nuevo.')
+              ? 'Your teacher session has expired. Please sign in again.'
+              : 'The introduction could not be skipped. Check the connection and try again.'
+        : 'The introduction could not be skipped. Check the connection and try again.')
     } finally {
       setIsSkippingIntro(false)
     }
@@ -162,13 +176,13 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     } catch (error) {
       setError(error instanceof ApiError
         ? error.status === 401
-          ? 'La sesión docente expiró. Inicia sesión de nuevo.'
+          ? 'Your teacher session has expired. Please sign in again.'
           : error.status === 404
-            ? 'La API no encuentra esta sesión. Inicia una sesión nueva desde el catálogo.'
+            ? 'The API could not find this session. Start a new session from the catalog.'
             : error.status === 409
-              ? 'Los controles multimedia solo funcionan durante la Etapa 1.'
-              : 'La API rechazó el control multimedia (HTTP ' + error.status + ').'
-        : 'No se pudo conectar con Serena.Api. Revisa su terminal y vuelve a intentarlo.')
+              ? 'Media controls are only available during Stage 1.'
+              : 'The API rejected the media control (HTTP ' + error.status + ').'
+        : 'Could not connect to Serena.Api. Check its terminal and try again.')
     } finally {
       setIsControllingMedia(false)
     }
@@ -182,7 +196,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
         method: 'POST',
         body: JSON.stringify({ volumePercent }),
       }).then((next) => setState((current) => ({ ...current, ...next })))
-        .catch(() => setError('No se pudo actualizar el volumen de la narrativa.'))
+        .catch(() => setError('Could not update the story volume.'))
         .finally(() => { volumeTimer.current = undefined })
     }, 180)
   }
@@ -201,8 +215,8 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
       window.location.href = '/?screen=catalog'
     } catch (error) {
       setError(error instanceof ApiError && error.status === 404
-        ? 'La API no reconoce la orden de detener la narrativa. Reinicia Serena.Api e inténtalo de nuevo.'
-        : 'No se pudo detener la narrativa. Verifica la sesión y la conexión e inténtalo de nuevo.')
+        ? 'The API did not recognize the stop-story request. Restart Serena.Api and try again.'
+        : 'The story could not be stopped. Check the session connection and try again.')
       setIsReturning(false)
     }
   }
@@ -223,7 +237,7 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
         return answers.length === 4 && answers.every((answer) => answer === 'yes' || answer === 'no')
       })
       if (!complete) {
-        setError('Espera a que todos los estudiantes conectados completen las cuatro reflexiones antes de abrir la votaciÃ³n.')
+        setError('Wait for all connected students to complete the four reflections before opening the vote.')
         return
       }
       const next = await apiRequest<ProjectionState>('/sessions/' + sessionCode + '/open-vote', { method: 'POST' })
@@ -231,10 +245,10 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
       setShowFeedback(true)
     } catch (error) {
       setError(error instanceof ApiError && error.status === 401
-        ? 'La sesi\u00f3n docente expir\u00f3. Inicia sesi\u00f3n de nuevo para ver la retroalimentaci\u00f3n.'
+        ? 'Your teacher session has expired. Sign in again to view the feedback.'
         : error instanceof ApiError && error.status === 409
-          ? 'Todos los estudiantes conectados deben completar las cuatro reflexiones antes de abrir la votaci\u00f3n.'
-          : 'No se pudieron cargar las respuestas de los estudiantes. Verifica la conexi\u00f3n e int\u00e9ntalo de nuevo.')
+          ? 'All connected students must complete the four reflections before opening the vote.'
+          : 'Could not load student responses. Check the connection and try again.')
     } finally {
       setIsOpeningFeedback(false)
     }
@@ -272,94 +286,94 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
     <main className="flex min-h-screen flex-col bg-[#171717] text-white">
       <header className="flex items-center justify-between border-b border-white/10 bg-black/30 px-5 py-3 sm:px-8">
         <span className="text-lg font-bold text-red-500">Serena</span>
-        <span className="rounded-full bg-white/10 px-3 py-1 text-sm">{state.connectedStudents} conectados · {state.readyStudents} listos</span>
+        <span className="rounded-full bg-white/10 px-3 py-1 text-sm">{state.connectedStudents} connected · {state.readyStudents} ready</span>
       </header>
       {!state.narrativeStarted ? (
         <section className="grid flex-1 place-items-center px-6 text-center">
           <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-white/50">Proyección colectiva</p>
-            <h1 className="mt-4 text-3xl font-bold">Esperando al docente</h1>
-            <p className="mt-2 text-white/70">{error || 'La experiencia aparecerá aquí cuando inicie.'}</p>
+            <p className="text-sm uppercase tracking-[0.2em] text-white/50">Group projection</p>
+            <h1 className="mt-4 text-3xl font-bold">Waiting for the teacher</h1>
+            <p className="mt-2 text-white/70">{error || 'The experience will appear here once it begins.'}</p>
           </div>
         </section>
       ) : introPending ? (
         <section className="grid flex-1 place-items-center px-6 text-center">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Introducción en curso</p>
-            <h1 className="mt-4 text-3xl font-extrabold sm:text-5xl">Mira la introducción en tu tablet</h1>
-            <p className="mt-4 text-lg text-white/75">La narrativa comenzará cuando todas las tablets conectadas terminen el video.</p>
-            <p className="mt-6 text-base text-white/60">Completadas: {state.introCompletedStudents}/{state.connectedStudents}</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Introduction in progress</p>
+            <h1 className="mt-4 text-3xl font-extrabold sm:text-5xl">Watch the introduction on your tablet</h1>
+            <p className="mt-4 text-lg text-white/75">The story will begin when all connected tablets finish the video.</p>
+            <p className="mt-6 text-base text-white/60">Completed: {state.introCompletedStudents}/{state.connectedStudents}</p>
             {error && <p role="alert" className="mt-4 text-sm text-amber-200">{error}</p>}
-            <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || state.connectedStudents === 0} className="mt-8 rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:opacity-50">{isSkippingIntro ? 'Omitiendo introducción…' : 'Omitir introducción'}</button>
-            <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mt-8 rounded-lg border border-white/30 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a escoger capítulos'}</button>
+            <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || state.connectedStudents === 0} className="mt-8 rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:opacity-50">{isSkippingIntro ? 'Skipping introduction…' : 'Skip introduction'}</button>
+            <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mt-8 rounded-lg border border-white/30 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Stopping story…' : '← Back to chapters'}</button>
           </div>
         </section>
       ) : (
         <section className={'mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-5 sm:px-8 sm:py-8 ' + (state.stage >= 2 ? 'lg:pl-[24rem]' : '')}>
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Etapa {state.stage} de 5</p>
-              <h1 className="mt-2 text-3xl font-extrabold sm:text-5xl">{state.stageLabel}</h1>
-              <p className="mt-2 max-w-3xl text-base text-white/75 sm:text-lg">{state.stageDescription}</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Stage {state.stage} of 5</p>
+              <h1 className="mt-2 text-3xl font-extrabold sm:text-5xl">{stageTitles[state.stage] ?? state.stageLabel}</h1>
+              <p className="mt-2 max-w-3xl text-base text-white/75 sm:text-lg">{stageDescriptions[state.stage] ?? state.stageDescription}</p>
             </div>
-            <div className="flex gap-1.5" aria-label={'Etapa ' + state.stage + ' de 5'}>
+            <div className="flex gap-1.5" aria-label={'Stage ' + state.stage + ' of 5'}>
               {[1, 2, 3, 4, 5].map((step) => <span key={step} className={'h-2 w-8 rounded-full ' + (step <= state.stage ? 'bg-red-500' : 'bg-white/20')} />)}
             </div>
           </div>
           <div className="grid flex-1 place-items-center rounded-2xl bg-gradient-to-br from-[#463535] to-[#231d1d] px-6 py-8 text-center shadow-2xl">
             <div className="max-w-4xl">
               <p className="text-7xl font-black text-red-400 sm:text-9xl">{state.stage}</p>
-              <h2 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">{state.stageLabel}</h2>
-              <p className="mx-auto mt-4 max-w-3xl text-lg leading-relaxed text-white/80 sm:text-2xl">{state.stageDescription}</p>
+              <h2 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">{stageTitles[state.stage] ?? state.stageLabel}</h2>
+              <p className="mx-auto mt-4 max-w-3xl text-lg leading-relaxed text-white/80 sm:text-2xl">{stageDescriptions[state.stage] ?? state.stageDescription}</p>
             </div>
           </div>
           {state.stage === 5 && state.votingOpen && (
-            <aside aria-live="polite" aria-label="Resultado agregado de la votación" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
-              <h2 className="text-xl font-bold">Votación del grupo</h2>
-              <p className="mt-1 text-sm text-gray-600">Resultados anónimos: el grupo recomienda repetir o finalizar; el docente decide.</p>
+            <aside aria-live="polite" aria-label="Aggregated vote results" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
+              <h2 className="text-xl font-bold">Group vote</h2>
+              <p className="mt-1 text-sm text-gray-600">Anonymous results: the group recommends repeating or finishing; the teacher makes the final decision.</p>
               {(() => {
                 const total = state.continueVotes + state.alternativeVotes
                 const repeatPercent = total ? state.continueVotes / total * 100 : 0
                 const finishPercent = total ? state.alternativeVotes / total * 100 : 0
                 return <>
-                  <div className="mt-5 flex justify-between gap-3 text-sm font-semibold"><span className="text-violet-700">Repetir · {state.continueVotes}</span><span className="text-gray-700">Finalizar · {state.alternativeVotes}</span></div>
-                  <div className="mt-3 flex h-7 overflow-hidden rounded-full bg-gray-200" role="img" aria-label={`${state.continueVotes} votos para repetir y ${state.alternativeVotes} para finalizar`}>
+                  <div className="mt-5 flex justify-between gap-3 text-sm font-semibold"><span className="text-violet-700">Repeat · {state.continueVotes}</span><span className="text-gray-700">Finish · {state.alternativeVotes}</span></div>
+                  <div className="mt-3 flex h-7 overflow-hidden rounded-full bg-gray-200" role="img" aria-label={`${state.continueVotes} votes to repeat and ${state.alternativeVotes} to finish`}>
                     <div className="bg-violet-600 transition-[width] duration-500" style={{ width: `${repeatPercent}%` }} />
                     <div className="bg-gray-500 transition-[width] duration-500" style={{ width: `${finishPercent}%` }} />
                   </div>
-                  <p className="mt-3 text-center text-sm text-gray-600">{total} votos recibidos</p>
+                  <p className="mt-3 text-center text-sm text-gray-600">{total} votes received</p>
                 </>
               })()}
             </aside>
           )}
           {interactionKind && (
             <aside aria-live="polite" className="mx-auto mt-5 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 text-gray-950 shadow-2xl sm:p-8">
-              <h2 className="text-xl font-bold">{interactionKind === 'emotion' ? 'Emociones del grupo' : 'Decisiones del grupo'}</h2>
-              <p className="mt-1 text-sm text-gray-600">{responseCount} de {state.participantCount} participantes respondieron</p>
+              <h2 className="text-xl font-bold">{interactionKind === 'emotion' ? 'Group emotions' : 'Group decisions'}</h2>
+              <p className="mt-1 text-sm text-gray-600">{responseCount} of {state.participantCount} participants responded</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {Object.entries(groupedValues).map(([value, count]) => (
                   <div key={value} className={'rounded-lg border p-3 transition-colors ' + (count === highestCount ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-gray-50')}>
-                    <div className="mb-2 flex justify-between gap-3 text-sm"><span>{count === highestCount ? '★ ' : ''}{value}{count === highestCount ? ' · Mayoría' : ''}</span><span>{count} ({responseCount ? Math.round(count / responseCount * 100) : 0}%)</span></div>
+                    <div className="mb-2 flex justify-between gap-3 text-sm"><span>{count === highestCount ? '* ' : ''}{responseLabel(value)}{count === highestCount ? ' - Majority' : ''}</span><span>{count} ({responseCount ? Math.round(count / responseCount * 100) : 0}%)</span></div>
                     <div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className={'h-full rounded-full transition-[width] duration-300 ' + (count === highestCount ? 'bg-emerald-500' : 'bg-blue-500')} style={{ width: `${state.participantCount ? count / state.participantCount * 100 : 0}%` }} /></div>
                   </div>
                 ))}
-                {responseCount === 0 && <p className="text-sm text-gray-600">Esperando respuestas de los estudiantes…</p>}
+                {responseCount === 0 && <p className="text-sm text-gray-600">Waiting for student responses...</p>}
               </div>
             </aside>
           )}
           {state.stage === 1 && (
-            <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Controles de la narrativa en las tablets">
-              <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Atrasar cinco segundos">−5 s</button>
-              <button type="button" onClick={() => void controlMedia(state.mediaPaused ? 'play' : 'pause')} disabled={isControllingMedia} className="min-w-40 rounded-lg bg-red-600 px-5 py-3 font-semibold hover:bg-red-700 disabled:opacity-50">{state.mediaPaused ? 'Reanudar' : 'Pausar'}</button>
-              <button type="button" onClick={() => void controlMedia('forward-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Adelantar cinco segundos">+5 s</button>
+            <div className="mx-auto mt-1 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:p-4" aria-label="Story controls on student tablets">
+              <button type="button" onClick={() => void controlMedia('back-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Go back five seconds">−5 s</button>
+              <button type="button" onClick={() => void controlMedia(state.mediaPaused ? 'play' : 'pause')} disabled={isControllingMedia} className="min-w-40 rounded-lg bg-red-600 px-5 py-3 font-semibold hover:bg-red-700 disabled:opacity-50">{state.mediaPaused ? 'Resume' : 'Pause'}</button>
+              <button type="button" onClick={() => void controlMedia('forward-5')} disabled={isControllingMedia} className="min-w-20 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:opacity-50" aria-label="Skip ahead five seconds">+5 s</button>
               <label className="flex items-center gap-2 text-sm text-white/80">
                 <span aria-hidden="true">{state.volumePercent === 0 ? '🔇' : '🔊'}</span>
-                <span className="sr-only">Volumen de la narrativa</span>
-                <input type="range" min="0" max="100" value={state.volumePercent} onChange={(event) => controlVolume(Number(event.target.value))} aria-label="Volumen de la narrativa" className="w-24 cursor-pointer accent-red-500" />
+                <span className="sr-only">Story volume</span>
+                <input type="range" min="0" max="100" value={state.volumePercent} onChange={(event) => controlVolume(Number(event.target.value))} aria-label="Story volume" className="w-24 cursor-pointer accent-red-500" />
                 <span className="w-9 text-right tabular-nums">{state.volumePercent}%</span>
               </label>
-              <div className="w-full space-y-1 px-1" aria-label="Progreso del video de la narrativa">
-                <div role="progressbar" aria-label="Progreso del video" aria-valuemin={0} aria-valuemax={mediaDurationSeconds || undefined} aria-valuenow={Math.min(mediaTime, mediaDurationSeconds || mediaTime)} className="h-2 overflow-hidden rounded-full bg-white/20">
+              <div className="w-full space-y-1 px-1" aria-label="Story video progress">
+                <div role="progressbar" aria-label="Video progress" aria-valuemin={0} aria-valuemax={mediaDurationSeconds || undefined} aria-valuenow={Math.min(mediaTime, mediaDurationSeconds || mediaTime)} className="h-2 overflow-hidden rounded-full bg-white/20">
                   <div className="h-full rounded-full bg-red-500 transition-[width] duration-300" style={{ width: `${mediaProgress}%` }} />
                 </div>
                 <div className="flex justify-between text-sm tabular-nums text-white/75" aria-live="polite">
@@ -369,12 +383,12 @@ export default function ProjectionScreen({ sessionCode }: { sessionCode: string 
               </div>
             </div>
           )}
-          <nav aria-label="Controles de avance de la narrativa" className="mx-auto mt-5 flex w-full max-w-2xl gap-3">
-            <button type="button" onClick={() => void changeStage(-1)} disabled={isChangingStage || state.stage <= 1} className="flex-1 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40">Etapa anterior</button>
-            <button type="button" onClick={() => state.stage >= 5 ? void openTeacherFeedback() : void changeStage(1)} disabled={isChangingStage || isOpeningFeedback || (state.stage === 5 && !allReflectionsSubmitted)} className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">{isOpeningFeedback ? 'Abriendo votaci\u00f3n\u2026' : state.stage >= 5 ? 'Finalizar Narrativa' : 'Avanzar etapa'}</button>
+          <nav aria-label="Story navigation controls" className="mx-auto mt-5 flex w-full max-w-2xl gap-3">
+            <button type="button" onClick={() => void changeStage(-1)} disabled={isChangingStage || state.stage <= 1} className="flex-1 rounded-lg border border-white/25 bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40">Previous stage</button>
+            <button type="button" onClick={() => state.stage >= 5 ? void openTeacherFeedback() : void changeStage(1)} disabled={isChangingStage || isOpeningFeedback || (state.stage === 5 && !allReflectionsSubmitted)} className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">{isOpeningFeedback ? 'Opening vote…' : state.stage >= 5 ? 'Finish Story' : 'Advance stage'}</button>
           </nav>
-          {state.stage === 5 && <p className="mt-2 text-center text-xs text-white/70">Reflexiones completas: {completedReflections}/{connectedReflectionParticipants.length}</p>}
-          <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mx-auto mt-4 rounded-lg border border-white/25 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Deteniendo narrativa…' : '← Volver a escoger capítulos'}</button>
+          {state.stage === 5 && <p className="mt-2 text-center text-xs text-white/70">Completed reflections: {completedReflections}/{connectedReflectionParticipants.length}</p>}
+          <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="mx-auto mt-4 rounded-lg border border-white/25 px-5 py-3 font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50">{isReturning ? 'Stopping story…' : '← Back to chapters'}</button>
           {error && <p role="alert" className="mt-4 text-center text-sm text-amber-200">{error}</p>}
         </section>
       )}

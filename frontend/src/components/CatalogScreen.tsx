@@ -12,45 +12,45 @@ type Narrative = { title: string }
 type Chapter = { title: string; narratives: Narrative[] }
 
 const chapters: Chapter[] = [
-  { title: 'Capítulo 1: Autoconocimiento y conciencia emocional', narratives: [
-    { title: '¿Quién soy yo? Identidad personal y social' }, { title: 'Mis emociones tienen nombre' }, { title: 'El termómetro emocional' }, { title: 'Cuerpo y emoción' },
-    { title: 'Mis fortalezas y áreas de mejora' }, { title: 'El diálogo interno' }, { title: 'Autoestima: quererme sin perfección' }, { title: 'Mi historia personal' },
+  { title: 'Chapter 1: Self-Knowledge and Emotional Awareness', narratives: [
+    { title: 'Who Am I? Personal and Social Identity' }, { title: 'My Emotions Have Names' }, { title: 'The Emotion Thermometer' }, { title: 'Body and Emotion' },
+    { title: 'My Strengths and Areas for Growth' }, { title: 'Inner Dialogue' }, { title: 'Self-Esteem: Accepting Myself Without Perfection' }, { title: 'My Personal Story' },
   ] },
-  { title: 'Capítulo 2: Autorregulación emocional', narratives: [
-    { title: 'El semáforo de las emociones' }, { title: 'Respiración y calma' }, { title: 'La impulsividad y sus consecuencias' }, { title: 'Tolerancia a la frustración' },
-    { title: 'Manejo del estrés y la ansiedad' }, { title: 'El poder de la pausa' }, { title: 'Estrategias saludables para regular lo que siento' }, { title: 'Autocontrol y libertad' },
+  { title: 'Chapter 2: Emotional Self-Regulation', narratives: [
+    { title: 'The Emotional Traffic Light' }, { title: 'Breathing and Calm' }, { title: 'Impulsivity and Its Consequences' }, { title: 'Tolerance for Frustration' },
+    { title: 'Managing Stress and Anxiety' }, { title: 'The Power of a Pause' }, { title: 'Healthy Strategies for Managing Emotions' }, { title: 'Self-Control and Freedom' },
   ] },
-  { title: 'Capítulo 3: Empatía y perspectiva social', narratives: [
-    { title: '¿Qué es la empatía?' }, { title: 'Empatía cognitiva y emocional' }, { title: 'Escucha activa' }, { title: 'Prejuicios y estereotipos' },
-    { title: 'La diversidad como riqueza' }, { title: 'Empatía en acción' }, { title: 'Compasión: del sentir al actuar' }, { title: 'Empatía digital' },
+  { title: 'Chapter 3: Empathy and Social Perspective', narratives: [
+    { title: 'What Is Empathy?' }, { title: 'Cognitive and Emotional Empathy' }, { title: 'Active Listening' }, { title: 'Bias and Stereotypes' },
+    { title: 'The Value of Diversity' }, { title: 'Empathy in Action' }, { title: 'Compassion: From Feeling to Action' }, { title: 'Digital Empathy' },
   ] },
-  { title: 'Capítulo 4: Habilidades de comunicación y relación', narratives: [
-    { title: 'Comunicación asertiva' }, { title: 'Lenguaje verbal y no verbal' }, { title: 'El arte de conversar' }, { title: 'Resolución de conflictos' },
-    { title: 'Negociación y acuerdos justos' }, { title: 'Críticas constructivas' }, { title: 'Construir confianza' }, { title: 'Vínculos saludables' },
+  { title: 'Chapter 4: Communication and Relationship Skills', narratives: [
+    { title: 'Assertive Communication' }, { title: 'Verbal and Nonverbal Communication' }, { title: 'The Art of Conversation' }, { title: 'Conflict Resolution' },
+    { title: 'Negotiation and Fair Agreements' }, { title: 'Constructive Feedback' }, { title: 'Building Trust' }, { title: 'Healthy Relationships' },
   ] },
-  { title: 'Capítulo 5: Colaboración y trabajo en equipo', narratives: [
-    { title: '¿Qué es trabajar en equipo?' }, { title: 'Roles y responsabilidades' }, { title: 'Cooperación vs. competencia' }, { title: 'Liderazgo positivo' },
-    { title: 'Toma de decisiones colectivas' }, { title: 'Manejo de desacuerdos' }, { title: 'Metas compartidas' }, { title: 'Celebrar los logros del equipo' },
+  { title: 'Chapter 5: Collaboration and Teamwork', narratives: [
+    { title: 'What Does Teamwork Mean?' }, { title: 'Roles and Responsibilities' }, { title: 'Cooperation vs. Competition' }, { title: 'Positive Leadership' },
+    { title: 'Collaborative Decision-Making' }, { title: 'Managing Disagreements' }, { title: 'Shared Goals' }, { title: 'Celebrating Team Achievements' },
   ] },
-  { title: 'Capítulo 6: Toma de decisiones responsables', narratives: [
-    { title: 'Decisiones cotidianas' }, { title: 'El proceso de decidir' }, { title: 'Consecuencias a corto y largo plazo' }, { title: 'Influencia social y presión de grupo' },
-    { title: 'Valores como brújula' }, { title: 'Decisiones éticas' }, { title: 'Aprender de los errores' }, { title: 'Responsabilidad sobre mis elecciones' },
+  { title: 'Chapter 6: Responsible Decision-Making', narratives: [
+    { title: 'Everyday Decisions' }, { title: 'The Decision-Making Process' }, { title: 'Short- and Long-Term Consequences' }, { title: 'Social Influence and Peer Pressure' },
+    { title: 'Values as a Compass' }, { title: 'Ethical Decisions' }, { title: 'Learning from Mistakes' }, { title: 'Taking Responsibility for My Choices' },
   ] },
-  { title: 'Capítulo 7: Valores, principios y ética personal', narratives: [
-    { title: '¿Qué son los valores?' }, { title: 'Honestidad y confianza' }, { title: 'Justicia' }, { title: 'Respeto y dignidad' },
-    { title: 'Responsabilidad y compromiso' }, { title: 'Solidaridad' }, { title: 'Integridad' }, { title: 'Mi código ético personal' },
+  { title: 'Chapter 7: Values, Principles, and Personal Ethics', narratives: [
+    { title: 'What Are Values?' }, { title: 'Honesty and Trust' }, { title: 'Justice' }, { title: 'Respect and Dignity' },
+    { title: 'Responsibility and Commitment' }, { title: 'Solidarity' }, { title: 'Integrity' }, { title: 'My Personal Code of Ethics' },
   ] },
-  { title: 'Capítulo 8: Ética en las relaciones y convivencia', narratives: [
-    { title: 'Convivencia pacífica' }, { title: 'Derechos humanos' }, { title: 'Igualdad y no discriminación' }, { title: 'Libertad con responsabilidad' },
-    { title: 'Justicia restaurativa' }, { title: 'Cultura de paz' }, { title: 'Ciudadanía activa' }, { title: 'Ética del cuidado' },
+  { title: 'Chapter 8: Ethics and Healthy Relationships', narratives: [
+    { title: 'Peaceful Coexistence' }, { title: 'Human Rights' }, { title: 'Equality and Non-Discrimination' }, { title: 'Freedom with Responsibility' },
+    { title: 'Restorative Justice' }, { title: 'A Culture of Peace' }, { title: 'Active Citizenship' }, { title: 'Ethics of Care' },
   ] },
-  { title: 'Capítulo 9: Ética en el mundo digital y global', narratives: [
-    { title: 'Ciudadanía digital' }, { title: 'Huella digital' }, { title: 'Verdad y desinformación' }, { title: 'Respeto en redes' },
-    { title: 'Privacidad y datos personales' }, { title: 'Consumo responsable y ética ambiental' }, { title: 'Ética global' }, { title: 'Tecnología con valores' },
+  { title: 'Chapter 9: Ethics in a Digital and Global World', narratives: [
+    { title: 'Digital Citizenship' }, { title: 'Digital Footprints' }, { title: 'Truth and Misinformation' }, { title: 'Respect on Social Media' },
+    { title: 'Privacy and Personal Data' }, { title: 'Responsible Consumption and Environmental Ethics' }, { title: 'Global Ethics' }, { title: 'Technology Guided by Values' },
   ] },
-  { title: 'Capítulo 10: Proyecto de vida y compromiso ético', narratives: [
-    { title: 'Mis sueños y metas' }, { title: 'Plan de vida' }, { title: 'Habilidades para la vida' }, { title: 'Ética y proyecto profesional' },
-    { title: 'Contribuir a mi comunidad' }, { title: 'Resiliencia' }, { title: 'Ciudadanía global' }, { title: 'Mi compromiso ético' },
+  { title: 'Chapter 10: Life Plans and Ethical Commitment', narratives: [
+    { title: 'My Dreams and Goals' }, { title: 'A Plan for My Life' }, { title: 'Life Skills' }, { title: 'Ethics and Career Plans' },
+    { title: 'Contributing to My Community' }, { title: 'Resilience' }, { title: 'Global Citizenship' }, { title: 'My Ethical Commitment' },
   ] },
 ]
 
@@ -60,7 +60,7 @@ function UserIcon() {
 
 function NarrativeCover({ source, title }: { source?: string; title: string }) {
   if (!source) return null
-  return <img src={source} alt={`Portada de ${title}`} onError={(event) => { event.currentTarget.style.display = 'none' }} className="absolute inset-0 h-full w-full object-cover" />
+  return <img src={source} alt={`Cover image for ${title}`} onError={(event) => { event.currentTarget.style.display = 'none' }} className="absolute inset-0 h-full w-full object-cover" />
 }
 
 export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogout, isCreatingSession, sessionError }: CatalogScreenProps) {
@@ -69,12 +69,12 @@ export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogou
   useEffect(() => {
     let cancelled = false
 
-    // En desarrollo Vite redirige esta ruta al servidor de portadas. Así el
-    // catálogo también funciona si Vite elige un puerto distinto de 5173.
+    // In development, Vite proxies this route to the cover server, so the
+    // catalog also works when Vite chooses a port other than 5173.
     fetch(import.meta.env.VITE_MEDIA_SERVER_URL ?? '/covers-manifest')
       .then(async (response) => response.ok ? response.json() as Promise<{ covers: Record<string, string> }> : Promise.reject())
       .then((manifest) => { if (!cancelled) setCovers(manifest.covers) })
-      .catch(() => { /* El catálogo conserva el fondo oscuro si no hay una portada disponible. */ })
+      .catch(() => { /* Keep the dark card backgrounds when covers are unavailable. */ })
 
     return () => { cancelled = true }
   }, [])
@@ -83,12 +83,12 @@ export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogou
     <main className="min-h-screen bg-gray-50 text-gray-950">
       <header className="flex h-11 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm">
         <span className="text-lg font-bold tracking-tight text-red-700">Serena</span>
-        <div className="flex items-center gap-3"><span className="hidden text-xs text-gray-600 sm:inline">{teacherEmail}</span><button type="button" onClick={onLogout} aria-label="Cerrar sesión" title="Cerrar sesión" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"><UserIcon /></button></div>
+        <div className="flex items-center gap-3"><span className="hidden text-xs text-gray-600 sm:inline">{teacherEmail}</span><button type="button" onClick={onLogout} aria-label="Sign out" title="Sign out" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"><UserIcon /></button></div>
       </header>
 
       <div className="space-y-10 px-4 py-9 sm:px-6 lg:px-8">
         {sessionError && <p role="alert" className="mx-auto max-w-2xl rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{sessionError}</p>}
-        {isCreatingSession && <p role="status" className="mx-auto max-w-2xl text-center text-sm text-gray-600">Creando la sesión…</p>}
+        {isCreatingSession && <p role="status" className="mx-auto max-w-2xl text-center text-sm text-gray-600">Creating session…</p>}
         {chapters.map((chapter, chapterIndex) => (
           <section key={chapter.title} aria-labelledby={`chapter-${chapterIndex}`}>
             <h1 id={`chapter-${chapterIndex}`} className="mb-4 text-xl font-extrabold tracking-tight text-gray-950">{chapter.title}</h1>
@@ -96,7 +96,7 @@ export default function CatalogScreen({ onNarrativeSelect, teacherEmail, onLogou
               {chapter.narratives.map((narrative, narrativeIndex) => {
                 const globalNarrative = chapterIndex * 8 + narrativeIndex + 1
                 const isFirstNarrative = globalNarrative === 1
-                const card = <><div className="aspect-video bg-gray-800" /><NarrativeCover source={covers[String(chapterIndex + 1)]} title={narrative.title} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pb-3 pt-10"><p className="text-xs font-semibold text-red-500">Capítulo {chapterIndex + 1}</p><p className="mt-1 text-sm font-bold leading-tight text-white">Narrativa {narrativeIndex + 1}: {narrative.title}</p></div></>
+                const card = <><div className="aspect-video bg-gray-800" /><NarrativeCover source={covers[String(chapterIndex + 1)]} title={narrative.title} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pb-3 pt-10"><p className="text-xs font-semibold text-red-500">Chapter {chapterIndex + 1}</p><p className="mt-1 text-sm font-bold leading-tight text-white">Story {narrativeIndex + 1}: {narrative.title}</p></div></>
                 return isFirstNarrative ? <button key={narrative.title} type="button" disabled={isCreatingSession} onClick={onNarrativeSelect} aria-busy={isCreatingSession} className="relative overflow-hidden rounded-xl text-left shadow-md transition duration-150 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">{card}</button> : <article key={narrative.title} className="relative overflow-hidden rounded-xl shadow-md">{card}</article>
               })}
             </div>

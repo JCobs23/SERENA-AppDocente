@@ -5,7 +5,7 @@ const emotionOptions = [
   { value: 'Confundido', label: 'Confused', color: '#f54245' },
   { value: 'Curioso', label: 'Curious', color: '#397bf7' },
   { value: 'Incómodo', label: 'Uncomfortable', color: '#efb000' },
-  { value: 'Miedo a la exclusión', label: 'Fear', color: '#8958f5' },
+  { value: 'Miedo a la exclusión', label: 'Fear of exclusion', color: '#8958f5' },
   { value: 'Neutral', label: 'Neutral', color: '#08b3c7' },
 ]
 
@@ -17,10 +17,10 @@ const decisionOptions = [
 ]
 
 const reflectionQuestions = [
-  '¿Esta decisión estuvo de acuerdo con tus valores?',
-  '¿Tomarías la misma decisión en la vida real?',
-  '¿Pensaste en el impacto sobre las demás personas?',
-  '¿Te sientes conforme con este resultado?',
+  'Did this decision align with your values?',
+  'Would you make the same decision in real life?',
+  'Did you consider the impact on other people?',
+  'Are you satisfied with this outcome?',
 ]
 
 const normalize = (value: string | null | undefined) => (value ?? '').trim().toLocaleLowerCase()
@@ -106,7 +106,7 @@ export default function SessionSummary({ students, votes, onFinish, onRepeat }: 
         <p className="mt-1 text-sm text-gray-600">A collection of emotions, decisions, and reflections</p>
       </div>
       <div className="justify-self-start rounded-xl bg-rose-50 px-4 py-2 text-sm font-bold text-red-700 sm:justify-self-center">
-        <span aria-hidden="true" className="mr-2">♧</span>{total} Estudiantes
+        <span aria-hidden="true" className="mr-2">♧</span>{total} Students
       </div>
     </header>
 
@@ -117,7 +117,7 @@ export default function SessionSummary({ students, votes, onFinish, onRepeat }: 
           <span>STUDENTS</span><span>EMOTION</span><span>DECISION</span>
         </div>
         <div className="max-h-[calc(100vh-245px)] min-h-[280px] overflow-y-auto px-5">
-          {participants.length === 0 ? <p className="py-8 text-sm text-gray-500">No hay participantes registrados en esta sesión.</p> : participants.map((student) => (
+          {participants.length === 0 ? <p className="py-8 text-sm text-gray-500">No students are registered for this session.</p> : participants.map((student) => (
             <div key={student.studentId} className="grid min-h-[61px] grid-cols-[minmax(0,1.5fr)_minmax(130px,.9fr)_minmax(220px,1fr)] items-center border-b border-gray-200 last:border-b-0">
               <div className="flex min-w-0 items-center gap-3 pr-2">
                 <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-[#bd1720] text-xs font-bold text-white">{initials(student.studentName)}</span>
@@ -174,15 +174,15 @@ export default function SessionSummary({ students, votes, onFinish, onRepeat }: 
             </div>
 
             <div>
-              <h2 className="mb-3 text-base font-bold">Aprendizajes y Oportunidades</h2>
-              <h3 className="text-xs font-extrabold">Aprendizaje del grupo</h3>
+              <h2 className="mb-3 text-base font-bold">Learning and Opportunities</h2>
+              <h3 className="text-xs font-extrabold">Group Learning</h3>
               <p className="mt-1 text-xs leading-relaxed">{leadingDecision
-                ? `El ${decisionPercent}% del grupo optó por ${decisionLabel(leadingDecision[0])} como respuesta principal${positivePercentage === null ? '.' : `, y el ${positivePercentage}% de las reflexiones fueron positivas.`}`
-                : 'Aún no hay decisiones registradas en esta sesión.'}</p>
-              <h3 className="mt-4 text-xs font-extrabold">Oportunidades de crecimiento</h3>
+                ? `${decisionPercent}% of the group chose ${decisionLabel(leadingDecision[0])} as their primary response${positivePercentage === null ? '.' : `, and ${positivePercentage}% of reflections were positive.`}`
+                : 'No decisions have been recorded for this session yet.'}</p>
+              <h3 className="mt-4 text-xs font-extrabold">Growth Opportunities</h3>
               <p className="mt-1 text-xs leading-relaxed">{discomfortCount
-                ? `Un ${discomfortPercent}% del grupo mostró emociones como incomodidad o miedo ante el conflicto; puede ser un buen punto de partida para trabajar regulación emocional en la próxima sesión.`
-                : 'Aún no se registran emociones de incomodidad o miedo en esta sesión.'}</p>
+                ? `${discomfortPercent}% of the group showed discomfort or fear during the conflict. This may be a useful starting point for practicing emotional regulation in the next session.`
+                : 'No discomfort- or fear-related emotions have been recorded for this session yet.'}</p>
             </div>
           </div>
         </section>
@@ -228,9 +228,9 @@ export default function SessionSummary({ students, votes, onFinish, onRepeat }: 
 
     {selected && <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null) }}>
       <section role="dialog" aria-modal="true" aria-labelledby="student-detail-title" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <header className="flex items-center justify-between bg-gray-950 px-5 py-4 text-white"><div><h2 id="student-detail-title" className="font-bold">{selected.studentName}</h2><p className="text-xs text-white/70">Detalle individual de la sesión</p></div><button type="button" aria-label="Cerrar detalle" onClick={() => setSelected(null)} className="rounded-full bg-white/15 px-3 py-1 text-xl">×</button></header>
-        <div className="space-y-4 p-5"><Detail label="Emoción identificada" value={emotionLabel(selected.emotion)} /><Detail label="Decisión tomada" value={decisionLabel(selected.decision)} />
-          <div><h3 className="text-xs font-bold uppercase text-gray-500">Respuestas de reflexión</h3>{selected.reflection ? <ul className="mt-2 space-y-2">{selected.reflection.split(',').map((answer, index) => <li key={index} className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm">{reflectionQuestions[index] ?? `Pregunta ${index + 1}`} <strong className="ml-1">{answer.trim().toLowerCase() === 'yes' ? 'Sí' : answer.trim().toLowerCase() === 'no' ? 'No' : '—'}</strong></li>)}</ul> : <p className="mt-2 text-sm text-gray-500">No respondió las preguntas de reflexión.</p>}</div>
+        <header className="flex items-center justify-between bg-gray-950 px-5 py-4 text-white"><div><h2 id="student-detail-title" className="font-bold">{selected.studentName}</h2><p className="text-xs text-white/70">Individual session details</p></div><button type="button" aria-label="Close details" onClick={() => setSelected(null)} className="rounded-full bg-white/15 px-3 py-1 text-xl">×</button></header>
+        <div className="space-y-4 p-5"><Detail label="Identified emotion" value={emotionLabel(selected.emotion)} /><Detail label="Decision made" value={decisionLabel(selected.decision)} />
+          <div><h3 className="text-xs font-bold uppercase text-gray-500">Reflection responses</h3>{selected.reflection ? <ul className="mt-2 space-y-2">{selected.reflection.split(',').map((answer, index) => <li key={index} className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm">{reflectionQuestions[index] ?? `Question ${index + 1}`} <strong className="ml-1">{answer.trim().toLowerCase() === 'yes' ? 'Yes' : answer.trim().toLowerCase() === 'no' ? 'No' : '—'}</strong></li>)}</ul> : <p className="mt-2 text-sm text-gray-500">This student did not answer the reflection questions.</p>}</div>
         </div>
       </section>
     </div>}
@@ -252,5 +252,5 @@ function Distribution({ rows, total, label, color, scaleToPeak = false }: { rows
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
-  return <div><h3 className="text-xs font-bold uppercase text-gray-500">{label}</h3><p className="mt-2 rounded-lg bg-gray-50 p-3 text-sm font-semibold">{value || 'Sin respuesta registrada'}</p></div>
+  return <div><h3 className="text-xs font-bold uppercase text-gray-500">{label}</h3><p className="mt-2 rounded-lg bg-gray-50 p-3 text-sm font-semibold">{value || 'No response recorded'}</p></div>
 }
