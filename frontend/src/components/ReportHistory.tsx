@@ -13,7 +13,7 @@ export default function ReportHistory({ onClose }: { onClose: () => void }) {
     let cancelled = false
     apiRequest<SessionReportListItem[]>('/reports')
       .then((result) => { if (!cancelled) setReports(result) })
-      .catch(() => { if (!cancelled) setError('No se pudieron cargar los reportes anteriores.') })
+      .catch(() => { if (!cancelled) setError('Past reports could not be loaded.') })
     return () => { cancelled = true }
   }, [])
 
@@ -21,20 +21,20 @@ export default function ReportHistory({ onClose }: { onClose: () => void }) {
     setLoadingId(reportId)
     setError('')
     try { setSelected(await apiRequest<SessionReport>('/reports/' + reportId)) }
-    catch { setError('No se pudo abrir este reporte. Comprueba tu conexión y vuelve a intentarlo.') }
+    catch { setError('This report could not be opened. Check your connection and try again.') }
     finally { setLoadingId('') }
   }
 
-  if (selected) return <SessionSummary report={selected} finishLabel="Volver a reportes" onFinish={() => setSelected(null)} />
+  if (selected) return <SessionSummary report={selected} finishLabel="Back to reports" onFinish={() => setSelected(null)} />
 
   return <main className="min-h-screen bg-slate-50 px-4 py-8 text-gray-950 sm:px-8">
-    <header className="mx-auto flex max-w-5xl items-center justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Reportes anteriores</h1><p className="mt-1 text-sm text-gray-600">Consulta los resultados grupales guardados.</p></div><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold hover:bg-gray-100">Volver al catálogo</button></header>
+    <header className="mx-auto flex max-w-5xl items-center justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Past reports</h1><p className="mt-1 text-sm text-gray-600">Review the saved group results.</p></div><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold hover:bg-gray-100">Back to the catalog</button></header>
     {error && <p role="alert" className="mx-auto mt-4 max-w-5xl rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     <section className="mx-auto mt-5 max-w-5xl overflow-hidden rounded-xl bg-white shadow-sm"><ul className="divide-y divide-gray-100">
-      {reports.length === 0 && !error && <li className="p-6 text-sm text-gray-600">Todavía no hay reportes guardados.</li>}
+      {reports.length === 0 && !error && <li className="p-6 text-sm text-gray-600">There are no saved reports yet.</li>}
       {reports.map((report) => <li key={report.reportId} className="flex flex-wrap items-center justify-between gap-4 p-5">
-        <div><h2 className="font-bold">Sesión {report.sessionCode}</h2><p className="mt-1 text-sm text-gray-600">{new Date(report.createdAt).toLocaleString()} · {report.participantCount} participantes · {report.status === 'completed' ? 'Completada' : 'Parcial'}</p></div>
-        <button type="button" onClick={() => void openReport(report.reportId)} disabled={loadingId === report.reportId} className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-bold text-white hover:bg-blue-950 disabled:opacity-60">{loadingId === report.reportId ? 'Abriendo…' : 'Abrir reporte'}</button>
+        <div><h2 className="font-bold">Session {report.sessionCode}</h2><p className="mt-1 text-sm text-gray-600">{new Date(report.createdAt).toLocaleString('en-US')} · {report.participantCount} participants · {report.status === 'completed' ? 'Completed' : 'Partial'}</p></div>
+        <button type="button" onClick={() => void openReport(report.reportId)} disabled={loadingId === report.reportId} className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-bold text-white hover:bg-blue-950 disabled:opacity-60">{loadingId === report.reportId ? 'Opening…' : 'Open report'}</button>
       </li>)}
     </ul></section>
   </main>

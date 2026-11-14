@@ -4,6 +4,9 @@ using System.Text.Json;
 
 sealed record ReflectionAggregate(int Question, int Yes, int No, int Unanswered);
 
+// H.U. 11.3.2: respuesta anónima (sin nombre ni identificador) para el detalle del resumen.
+sealed record AnonymousResponse(string? Emotion, string? Decision, string? Reflection);
+
 sealed record SessionReportSummary(
     string ReportId,
     string SessionCode,
@@ -18,7 +21,10 @@ sealed record SessionReportSummary(
     Dictionary<string, int> DecisionCounts,
     int ContinueVotes,
     int AlternativeVotes,
-    List<ReflectionAggregate> Reflections);
+    List<ReflectionAggregate> Reflections,
+    // Campos opcionales: los reportes guardados antes de este cambio no los tienen.
+    List<AnonymousResponse>? Responses = null,
+    List<string>? ExploredDecisions = null);
 
 sealed record StoredSessionReport(
     string ReportId,
@@ -56,7 +62,7 @@ sealed class SessionReportService(SerenaDatabase database, IConfiguration config
     public async Task SendAsync(StoredSessionReport report, string recipient, CancellationToken cancellationToken)
     {
         if (!AuthorizedRecipients.Contains(recipient, StringComparer.OrdinalIgnoreCase))
-            throw new ArgumentException("El destinatario no está autorizado.", nameof(recipient));
+            throw new ArgumentException("The recipient is not authorized.", nameof(recipient));
 
         var smtp = configuration.GetSection("Reports:Smtp");
         var host = smtp["Host"];
@@ -70,19 +76,19 @@ sealed class SessionReportService(SerenaDatabase database, IConfiguration config
         if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(username)
             || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(from)
             || !MailAddress.TryCreate(from, out _))
-            throw new InvalidOperationException("Configura el servidor SMTP y la contraseña de aplicación antes de enviar informes.");
+            throw new InvalidOperationException("Configure the SMTP server and the app password before sending reports.");
 
         using var message = new MailMessage
         {
             From = new MailAddress(from, "Serena"),
-            Subject = "Informe estudiantes",
-            Body = $"Adjuntamos el informe grupal de la sesión {report.SessionCode}. El documento presenta resultados agregados y no incluye nombres ni identificadores de estudiantes.",
+            Subject = "Student report",
+            Body = $"Attached is the group report for session {report.SessionCode}. The document shows aggregated results and does not include student names or identifiers.",
             SubjectEncoding = Encoding.UTF8,
             BodyEncoding = Encoding.UTF8
         };
         message.To.Add(new MailAddress(recipient));
         message.Attachments.Add(new Attachment(
-            new MemoryStream(report.Pdf), $"Informe-estudiantes-{report.SessionCode}.pdf", "application/pdf"));
+            new MemoryStream(report.Pdf), $"Student-report-{report.SessionCode}.pdf", "application/pdf"));
 
         using var client = new SmtpClient(host, port)
         {
@@ -120,7 +126,16 @@ sealed class SessionReportService(SerenaDatabase database, IConfiguration config
             Count(snapshot.Students.Select(student => student.Emotion)),
             Count(snapshot.Students.Select(student => student.Decision)),
             snapshot.Votes.Values.Count(value => value == "continue"),
-            snapshot.Votes.Values.Count(value => value == "alternative"), reflections);
+            snapshot.Votes.Values.Count(value => value == "alternative"), reflections,
+            // Orden por contenido (no por llegada) para no revelar quién respondió qué.
+            snapshot.Students
+                .Where(student => student.Emotion is not null || student.Decision is not null || student.Reflection is not null)
+                .Select(student => new AnonymousResponse(student.Emotion, student.Decision, student.Reflection))
+                .OrderBy(response => response.Decision ?? "￿", StringComparer.Ordinal)
+                .ThenBy(response => response.Emotion ?? "￿", StringComparer.Ordinal)
+                .ThenBy(response => response.Reflection ?? "￿", StringComparer.Ordinal)
+                .ToList(),
+            session.GetBlockedDecisions().ToList());
 
         var stored = database.SaveReport(summary, BuildPdf(summary));
         return JsonSerializer.Deserialize<SessionReportSummary>(stored.SummaryJson, JsonOptions)!;
@@ -136,26 +151,29 @@ sealed class SessionReportService(SerenaDatabase database, IConfiguration config
     {
         var lines = new List<string>
         {
-            "SERENA - Reporte grupal de actividad",
-            $"Sesion: {report.SessionCode}    Fecha UTC: {report.CreatedAt:yyyy-MM-dd HH:mm}",
-            $"Estado: {(report.Status == "completed" ? "Completada" : "Parcial/interrumpida")}",
-            $"Participantes: {report.ParticipantCount}    Conectados al cierre: {report.ConnectedParticipants}",
-            $"Etapa alcanzada: {report.StageReached} de 5    Avance: {report.AdvanceMode}",
-            $"Decision docente: {report.FinalDecision ?? "Sin decision"}",
-            $"Votos: continuar {report.ContinueVotes}    explorar otra decision {report.AlternativeVotes}",
+            "SERENA - Group activity report",
+            $"Session: {report.SessionCode}    Date (UTC): {report.CreatedAt:yyyy-MM-dd HH:mm}",
+            $"Status: {(report.Status == "completed" ? "Completed" : "Partial/interrupted")}",
+            $"Participants: {report.ParticipantCount}    Connected at the end: {report.ConnectedParticipants}",
+            $"Stage reached: {report.StageReached} of 5    Advance mode: {report.AdvanceMode}",
+            $"Teacher decision: {report.FinalDecision ?? "No decision"}",
+            $"Votes: continue {report.ContinueVotes}    explore another decision {report.AlternativeVotes}",
+            report.ExploredDecisions is { Count: > 0 }
+                ? $"Most voted decisions in previous rounds: {string.Join(", ", report.ExploredDecisions)}"
+                : "Decision rounds: 1",
             "",
-            "Distribucion de emociones"
+            "Emotion distribution"
         };
         lines.AddRange(AsLines(report.EmotionCounts));
         lines.Add("");
-        lines.Add("Distribucion de decisiones");
+        lines.Add("Decision distribution");
         lines.AddRange(AsLines(report.DecisionCounts));
         lines.Add("");
-        lines.Add("Reflexion grupal por pregunta");
+        lines.Add("Group reflection by question");
         lines.AddRange(report.Reflections.Select(value =>
-            $"Pregunta {value.Question}: si {value.Yes}, no {value.No}, sin respuesta {value.Unanswered}"));
+            $"Question {value.Question}: yes {value.Yes}, no {value.No}, unanswered {value.Unanswered}"));
         lines.Add("");
-        lines.Add("Reporte anonimo: no incluye nombres ni identificadores de estudiantes.");
+        lines.Add("Anonymous report: it does not include student names or identifiers.");
 
         var content = new StringBuilder();
         var y = 790;
@@ -200,7 +218,7 @@ sealed class SessionReportService(SerenaDatabase database, IConfiguration config
     }
 
     private static IEnumerable<string> AsLines(Dictionary<string, int> counts) => counts.Count == 0
-        ? ["Sin respuestas registradas"]
+        ? ["No responses recorded"]
         : counts.Select(entry => $"{entry.Key}: {entry.Value}");
 
     private static byte[] JoinBytes(params byte[][] values)

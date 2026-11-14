@@ -4,56 +4,56 @@ cd /d "%~dp0"
 
 where dotnet >nul 2>nul
 if errorlevel 1 (
-  echo No se encontro .NET SDK. Instala .NET SDK 10 y vuelve a abrir este archivo.
+  echo .NET SDK was not found. Install .NET SDK 10 and open this file again.
   pause
   exit /b 1
 )
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo No se encontro Node.js. Instala Node.js LTS y vuelve a abrir este archivo.
+  echo Node.js was not found. Install Node.js LTS and open this file again.
   pause
   exit /b 1
 )
 
 where npm.cmd >nul 2>nul
 if errorlevel 1 (
-  echo No se encontro npm. Reinstala Node.js LTS con npm incluido.
+  echo npm was not found. Reinstall Node.js LTS with npm included.
   pause
   exit /b 1
 )
 
 if not exist "backend\node_modules\socket.io" (
-  echo Instalando dependencias del backend...
+  echo Installing backend dependencies...
   call npm.cmd --prefix backend ci
   if errorlevel 1 goto :error
 )
 
 if not exist "frontend\node_modules\vite" (
-  echo Instalando dependencias del frontend...
+  echo Installing frontend dependencies...
   call npm.cmd --prefix frontend ci
   if errorlevel 1 goto :error
 )
 
-echo Compilando la API...
+echo Building the API...
 dotnet build Serena.Api
 if errorlevel 1 goto :error
 
-echo Preparando cuentas de prueba...
+echo Preparing test accounts...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Serena.Api\seed-demo-teachers.ps1"
 if errorlevel 1 goto :error
 
 if not exist "dist\serena-docente\Serena-Docente.exe" (
-  echo Creando el ejecutable de Serena...
+  echo Creating the Serena executable...
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "launcher\build-exe.ps1"
   if errorlevel 1 goto :error
 )
 
-echo Abriendo Serena. Mantenga esta ventana abierta durante la sesion.
+echo Opening Serena. Keep this window open during the session.
 start "" /wait "dist\serena-docente\Serena-Docente.exe"
 exit /b %errorlevel%
 
 :error
-echo No se pudo preparar Serena. Revisa el mensaje anterior y vuelve a intentarlo.
+echo Serena could not be prepared. Check the message above and try again.
 pause
 exit /b 1

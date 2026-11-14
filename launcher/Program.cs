@@ -8,7 +8,7 @@ while (root is not null && !File.Exists(Path.Combine(root, "Serena.Api", "Serena
 
 if (root is null || !File.Exists(Path.Combine(root, "Serena.Api", "Serena.Api.csproj")))
 {
-    MessageBox("No se encontró la carpeta del proyecto. Coloca Serena-Docente.exe dentro de la carpeta raíz de SERENA-AppDocente.");
+    MessageBox("The project folder was not found. Place Serena-Docente.exe inside the root folder of SERENA-AppDocente.");
     return;
 }
 
@@ -55,11 +55,11 @@ try
             logFiles.Select(name =>
             {
                 var path = Path.Combine(logsDirectory, name);
-                if (!File.Exists(path)) return name + ": sin registro";
+                if (!File.Exists(path)) return name + ": no log";
                 var lines = File.ReadAllLines(path);
                 return name + ":" + Environment.NewLine + string.Join(Environment.NewLine, lines.TakeLast(8));
             }));
-        MessageBox("Serena no pudo iniciar todos los servicios. Revisa estos registros:" +
+        MessageBox("Serena could not start all services. Check these logs:" +
             Environment.NewLine + logsDirectory + Environment.NewLine + Environment.NewLine + details);
         return;
     }
@@ -71,15 +71,15 @@ try
     });
 
     Console.WriteLine();
-    Console.WriteLine("Serena está abierta en http://localhost:5173");
-    Console.WriteLine("Mantén esta ventana abierta mientras usas la aplicación.");
-    Console.WriteLine("Pulsa Enter aquí cuando quieras cerrar Serena y detener los servicios.");
+    Console.WriteLine("Serena is open at http://localhost:5173");
+    Console.WriteLine("Keep this window open while you use the application.");
+    Console.WriteLine("Press Enter here when you want to close Serena and stop the services.");
     Console.ReadLine();
 }
 catch (Exception error)
 {
-    MessageBox("No se pudo iniciar Serena: " + error.Message +
-        Environment.NewLine + "Registros: " + logsDirectory);
+    MessageBox("Serena could not be started: " + error.Message +
+        Environment.NewLine + "Logs: " + logsDirectory);
 }
 finally
 {
@@ -125,7 +125,7 @@ static Process Start(string workingDirectory, string fileName, string logDirecto
     process.OutputDataReceived += (_, eventArgs) => WriteLine("out", eventArgs.Data);
     process.ErrorDataReceived += (_, eventArgs) => WriteLine("err", eventArgs.Data);
     if (!process.Start())
-        throw new InvalidOperationException("No se pudo iniciar " + serviceName + ".");
+        throw new InvalidOperationException("Could not start " + serviceName + ".");
     process.BeginOutputReadLine();
     process.BeginErrorReadLine();
     return process;

@@ -2,7 +2,7 @@ export class ApiError extends Error {
   readonly status: number
 
   constructor(status: number) {
-    super('La solicitud a Serena no pudo completarse.')
+    super('The request to Serena could not be completed.')
     this.name = 'ApiError'
     this.status = status
   }

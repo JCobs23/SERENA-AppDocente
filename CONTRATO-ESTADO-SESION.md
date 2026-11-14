@@ -7,7 +7,7 @@ Este documento describe el estado compartido entre Serena.Api, la aplicación do
 - `GET /api/sessions/{code}` entrega una instantánea pública para las tablets. No contiene nombres ni identificadores de estudiantes; solo cantidades y agregados.
 - `GET /api/sessions/{code}/stream` usa WebSocket autenticado por la cookie docente. Al conectar y reconectar envía primero `snapshot` (lista de asistencia para la sala docente) y después `narrative-state`.
 - Los cambios aceptados por la API incrementan la revisión y se publican a las conexiones de docentes y proyección. Las tablets consultan la instantánea REST y envían su interacción por los endpoints `/students/{studentId}/...`.
-- Cada operación POST de sesión persistida actualiza SQLite. El reporte final conserva solo agregados y no depende de la vida de la sesión activa.
+- Cada operación POST de sesión persistida actualiza SQLite. El reporte final conserva agregados y una lista de respuestas anónimas (emoción, decisión y reflexión de cada estudiante, sin nombre ni identificador y ordenadas por contenido, no por llegada). No depende de la vida de la sesión activa.
 
 ## Evento WebSocket `narrative-state`
 
@@ -27,6 +27,15 @@ El objeto `state` contiene estos campos JSON en camelCase:
 | `continueVotes`, `alternativeVotes` | integer | Conteo agregado de votos. |
 | `finalDecision` | `continue`, `vote` o `null` | Decisión final del docente. |
 | `voteRound` | integer | Identificador creciente de ronda para no reutilizar votos anteriores. |
+| `blockedDecisions` | string[] | Decisiones más votadas en rondas anteriores; las tablets las muestran desenfocadas y la API rechaza reelegirlas (H.U. 9.3.1). Vacío al iniciar o reiniciar la narrativa. |
+
+## Decisión alternativa (H.U. 9.3.1)
+
+- `POST /api/sessions/{code}/alternative-decision` (solo docente, HTTPS y cookie) está disponible en la etapa 5. Agrega a `blockedDecisions` las decisiones con más votos de la ronda actual (en caso de empate, todas las empatadas), borra la decisión y la reflexión de cada estudiante (se conserva la emoción), cierra la votación, incrementa `voteRound` y regresa a la etapa 3. Responde `409` fuera de la etapa 5.
+- Si al bloquear quedarían las cuatro opciones bloqueadas, la lista se reinicia con las más votadas de la ronda actual, para que siempre quede al menos una opción disponible.
+- `POST /students/{studentId}/decision` responde `422` si el valor está en `blockedDecisions`.
+- El reporte incluye `exploredDecisions` con las opciones bloqueadas durante la sesión. Las decisiones del reporte corresponden a la última ronda.
+- `blockedDecisions` se guarda solo en memoria: si la API se reinicia a mitad de la sesión, la lista vuelve a estar vacía.
 
 ## Reglas de sincronización
 

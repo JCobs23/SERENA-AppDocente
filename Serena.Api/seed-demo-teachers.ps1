@@ -52,4 +52,4 @@ try {
 
 $json = [ordered]@{ users = @($users.ToArray()) } | ConvertTo-Json -Depth 5
 [System.IO.File]::WriteAllText($usersPath, $json, [System.Text.UTF8Encoding]::new($false))
-Write-Host 'Cuentas de demostración preparadas (contraseñas guardadas únicamente como hashes).'
+Write-Host 'Demo accounts prepared (passwords stored only as hashes).'
