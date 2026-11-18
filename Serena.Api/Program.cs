@@ -6,12 +6,23 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:5080;https://localhost:5081");
+// Hallazgo H-S1 (SEG-12): un JSON malformado responde 400 sin detalles, aunque la API corra en Development.
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 var app = builder.Build();
+// Hallazgo H-S1: cualquier excepción no controlada responde con un mensaje genérico, sin traza ni rutas internas.
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    await context.Response.WriteAsJsonAsync(new { message = "An unexpected error occurred." });
+}));
 app.UseWebSockets();
 
 var sessions = new ConcurrentDictionary<string, ClassroomSession>();
 var teacherSessions = new ConcurrentDictionary<string, TeacherSession>();
 var loginAttempts = new ConcurrentDictionary<string, LoginAttemptWindow>();
+var unknownCodeLookups = new ConcurrentDictionary<string, UnknownCodeWindow>();
+const int maxUnknownCodesPerWindow = 15;
+var unknownCodeWindow = TimeSpan.FromMinutes(10);
 var sessionLifetime = TimeSpan.FromHours(4);
 var studentDisconnectAfter = TimeSpan.FromSeconds(15);
 var teacherSessionLifetime = TimeSpan.FromHours(8);
@@ -70,6 +81,40 @@ database.Initialize(ReadTeacherUsers(usersPath));
 var reportService = new SessionReportService(database, builder.Configuration);
 foreach (var snapshot in database.LoadSessions(DateTimeOffset.UtcNow, sessionLifetime))
     sessions[snapshot.Code] = ClassroomSession.Restore(snapshot);
+
+// Hallazgo H-S2 (SEG-14): una misma IP no puede probar muchos códigos de sesión distintos.
+// Solo cuentan los códigos inexistentes y diferentes, para que una tablet que sigue consultando
+// una sesión ya terminada no quede bloqueada.
+app.Use(async (context, next) =>
+{
+    var segments = (context.Request.Path.Value ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length < 3 || segments[0] != "api" || segments[1] != "sessions")
+    {
+        await next();
+        return;
+    }
+
+    var clientKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTimeOffset.UtcNow;
+    if (unknownCodeLookups.TryGetValue(clientKey, out var window)
+        && now - window.StartedAt <= unknownCodeWindow
+        && window.Codes.Count >= maxUnknownCodesPerWindow)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.Response.WriteAsJsonAsync(new { message = "Too many attempts with unknown session codes. Try again in a few minutes." });
+        return;
+    }
+
+    await next();
+
+    var code = segments[2];
+    if (context.Response.StatusCode == StatusCodes.Status404NotFound && !sessions.ContainsKey(code))
+        unknownCodeLookups.AddOrUpdate(clientKey,
+            _ => new UnknownCodeWindow(now, [code]),
+            (_, current) => now - current.StartedAt > unknownCodeWindow
+                ? new UnknownCodeWindow(now, [code])
+                : current with { Codes = current.Codes.Add(code) });
+});
 
 app.Use(async (context, next) =>
 {
@@ -630,6 +675,7 @@ sealed record TeacherStore(List<TeacherCredential> Users);
 sealed record TeacherCredential(string Email, string Salt, string PasswordHash, int Iterations);
 sealed record TeacherSession(string Email, DateTimeOffset ExpiresAt);
 sealed record LoginAttemptWindow(DateTimeOffset StartedAt, int Count);
+sealed record UnknownCodeWindow(DateTimeOffset StartedAt, System.Collections.Immutable.ImmutableHashSet<string> Codes);
 sealed record LoginRequest(string? Email, string? Password);
 sealed record SendReportRequest(string? Recipient);
 sealed record JoinRequest(string? Name, string? StudentId = null);
