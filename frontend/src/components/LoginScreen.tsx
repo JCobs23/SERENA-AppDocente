@@ -11,8 +11,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
 
-  // The API authenticates against configured teacher accounts. The client
-  // only checks that the address is syntactically valid.
+  // The API authenticates against the configured teacher accounts. The client
+  // only checks that the address is syntactically valid; the institution has
+  // not yet provided a single approved email domain.
   const normalizedEmail = email.trim()
   const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
 
@@ -21,7 +22,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     setMessage('')
     if (!normalizedEmail || !emailIsValid || !password) {
       setMessage(!normalizedEmail
-        ? 'Enter your institutional email address.'
+        ? 'Enter your school email address.'
         : !emailIsValid
           ? 'Enter a valid email address.'
           : 'Enter your password.')
@@ -44,7 +45,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       setPassword('')
       onLogin(normalizedEmail)
     } catch {
-      setMessage('Could not connect to Serena. Make sure the servers are running.')
+      setMessage('Could not connect to Serena. Check that the servers are running.')
     } finally {
       setIsSubmitting(false)
     }
@@ -59,7 +60,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         </header>
 
         <form onSubmit={handleSubmit} className="rounded-xl border border-gray-100 bg-white px-6 pb-5 pt-6 shadow-md" noValidate>
-          <label htmlFor="teacher-email" className="mb-2 block text-sm font-bold">Institutional email</label>
+          <label htmlFor="teacher-email" className="mb-2 block text-sm font-bold">School email address</label>
           <input
             id="teacher-email"
             name="email"
@@ -70,7 +71,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             onChange={(event) => setEmail(event.target.value)}
             aria-invalid={Boolean(email) && !emailIsValid}
             aria-describedby="email-hint"
-            placeholder="teacher@school.edu"
+            placeholder="teacher@school.edu.co"
             className="serena-login-input h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 aria-[invalid=true]:border-red-500 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-red-100"
           />
           <p id="email-hint" className={`mt-1 min-h-4 text-xs ${email && !emailIsValid ? 'text-red-600' : 'text-transparent'}`} aria-live="polite">
@@ -109,7 +110,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             disabled={isSubmitting}
             className="mt-5 flex h-11 w-full items-center justify-center rounded-md bg-[#d51f28] text-sm font-bold text-white transition hover:bg-[#be1b23] disabled:cursor-wait disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
-            {isSubmitting ? 'Signing in…' : 'Sign in'}
+            {isSubmitting ? 'Checking…' : 'Sign in'}
           </button>
           <p className="mt-3 min-h-5 text-center text-xs text-red-700" role="status" aria-live="polite">{message}</p>
           <p className="mt-1 text-center text-[11px] text-gray-500">Your credentials are only used to verify your access.</p>

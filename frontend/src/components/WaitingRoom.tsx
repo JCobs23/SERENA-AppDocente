@@ -3,6 +3,7 @@ import { apiRequest, ApiError } from '../lib/api'
 import SupervisionPanel, { type SupervisionStudent } from './SupervisionPanel'
 import FinalDecisionPanel from './FinalDecisionPanel'
 import SessionSummary from './SessionSummary'
+import type { SessionReport } from '../lib/reports'
 
 type Student = { id: string; name: string; connected: boolean; ready: boolean }
 type StudentInteraction = SupervisionStudent
@@ -21,6 +22,7 @@ type NarrativeState = {
   alternativeVotes: number
   finalDecision: 'continue' | 'vote' | null
   voteRound: number
+  blockedDecisions?: string[]
   emotionCounts?: Record<string, number>
   decisionCounts?: Record<string, number>
 }
@@ -33,20 +35,11 @@ const initialNarrativeState: NarrativeState = {
   advanceMode: 'automatic', votingOpen: false, continueVotes: 0, alternativeVotes: 0, finalDecision: null, voteRound: 0,
   emotionCounts: {}, decisionCounts: {},
 }
-const stageTitles = ['Introduction', 'Initial Narrative', 'Recognize the Emotion', 'Choose a Decision', 'See the Consequences', 'Reflect as a Group']
-const stageDescriptions = [
-  'Watch the introductory video before the story begins.',
-  'Observe the situation and understand the context.',
-  'Identify the emotion present in this situation.',
-  'Consider the alternatives and choose how to act.',
-  'Observe how the situation affected everyone involved.',
-  'Share a reflection on what happened.',
-]
 const shortcuts = [
   { key: 'SPACE', description: 'Play or pause the story' },
   { key: '→', description: 'Skip forward 5 seconds' },
-  { key: '←', description: 'Skip back 5 seconds' },
-  { key: 'M', description: 'Toggle audio' },
+  { key: '←', description: 'Go back 5 seconds' },
+  { key: 'M', description: 'Mute or unmute the audio' },
   { key: 'F', description: 'Enter full screen' },
   { key: 'ESC', description: 'Exit full screen' },
   { key: '↑ / ↓', description: 'Turn the volume up or down' },
@@ -61,11 +54,11 @@ function NarrativeControls({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-6 md:justify-end md:pt-24 md:pr-8">
-      <button type="button" aria-label="Close controls menu" onClick={onClose} className="fixed inset-0 cursor-default" />
+      <button type="button" aria-label="Close the controls menu" onClick={onClose} className="fixed inset-0 cursor-default" />
       <aside id="narrative-controls" role="dialog" aria-modal="true" aria-labelledby="controls-title" className="relative z-10 my-auto w-full max-w-[420px] rounded-2xl bg-[#463535] p-5 text-white shadow-2xl sm:p-6">
         <button type="button" onClick={onClose} aria-label="Close controls" className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-xl text-white/80 hover:bg-white/20">×</button>
         <h2 id="controls-title" className="pr-12 text-xl font-extrabold sm:text-2xl">Story controls</h2>
-        <p className="mt-1 text-sm leading-relaxed text-white/75">Keyboard shortcuts for controlling the presentation.</p>
+        <p className="mt-1 text-sm leading-relaxed text-white/75">Keyboard shortcuts to control the projection.</p>
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {shortcuts.map((shortcut) => (
             <div key={shortcut.key} className="flex min-h-[68px] items-center gap-3 rounded-lg bg-white/[0.08] px-3 py-3">
@@ -76,7 +69,7 @@ function NarrativeControls({ onClose }: { onClose: () => void }) {
         </div>
         <footer className="mt-5 rounded-lg border border-[#9b5658] bg-[#542f30] px-3 py-3">
           <p className="text-sm font-bold">Tip</p>
-          <p className="mt-1 text-sm text-white/85">Review these controls before starting the presentation.</p>
+          <p className="mt-1 text-sm text-white/85">Review these controls before starting the projection.</p>
         </footer>
       </aside>
     </div>
@@ -95,40 +88,27 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   const [studentInteractions, setStudentInteractions] = useState<StudentInteraction[]>([])
   const [isSupervisionOpen, setIsSupervisionOpen] = useState(true)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
+  const [isCreatingReport, setIsCreatingReport] = useState(false)
+  const [sessionReport, setSessionReport] = useState<SessionReport | null>(null)
 
   const [actionError, setActionError] = useState('')
+  const [projectionPath, setProjectionPath] = useState('')
   const connectedStudents = students.filter((student) => student.connected).length
   const readyStudents = students.filter((student) => student.connected && student.ready).length
   const currentInteraction = narrativeState.stage === 2 ? 'emotion' : narrativeState.stage === 5 ? 'reflection' : narrativeState.stage >= 3 ? 'decision' : null
   const isFinalDecision = narrativeState.narrativeStarted && narrativeState.stage === 5
   const activeInteractions = studentInteractions.filter((student) => student.connected)
   const respondedStudents = activeInteractions.filter((student) => currentInteraction && student[currentInteraction]).length
-  const reflectionParticipants = activeInteractions.length > 0
-    ? activeInteractions
-    : studentInteractions
-  const completedReflections = reflectionParticipants.filter((student) => {
-    const answers = student.reflection?.split(',').map((answer) => answer.trim().toLowerCase()) ?? []
-    return answers.length === 4 && answers.every((answer) => answer === 'yes' || answer === 'no')
-  }).length
-  const allReflectionsSubmitted = reflectionParticipants.length > 0
-    && completedReflections === reflectionParticipants.length
 
   useEffect(() => {
     let disposed = false
     let retryTimer = 0
     let stream: WebSocket | null = null
-    void apiRequest<NarrativeState>('/sessions/' + sessionCode)
-      .then((state) => {
-        if (disposed) return
-        setNarrativeState(state)
-        if (state.narrativeStarted) window.location.replace('/projection/' + sessionCode)
-      })
-      .catch(() => { /* La conexiÃ³n en tiempo real conserva la recuperaciÃ³n si la sesiÃ³n tarda en responder. */ })
     const refreshInteractions = async () => {
       try {
         const current = await apiRequest<StudentInteraction[]>('/sessions/' + sessionCode + '/interactions')
         if (!disposed) setStudentInteractions(current)
-      } catch { /* Keep the last received data if it cannot be refreshed. */ }
+      } catch { /* Mantiene los últimos datos recibidos si no se puede actualizar. */ }
     }
     const connect = () => {
       if (disposed) return
@@ -158,7 +138,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             setNarrativeState(payload.state)
             void refreshInteractions()
           }
-      } catch { /* Keep the last valid state. */ }
+        } catch { /* Conserva el último estado válido. */ }
       }
       stream.onclose = () => {
         setIsLive(false)
@@ -175,6 +155,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
   }, [sessionCode])
 
   async function startExperience() {
+    const projectionWindow = window.open('about:blank', '_blank')
     setIsStarting(true)
     setActionError('')
     try {
@@ -182,11 +163,14 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         method: 'POST',
       })
       setNarrativeState(state)
-      window.location.assign('/projection/' + sessionCode)
+      const path = '/projection/' + sessionCode
+      setProjectionPath(path)
+      if (projectionWindow) projectionWindow.location.href = path
     } catch (error) {
+      projectionWindow?.close()
       setActionError(error instanceof ApiError && error.status === 409
-        ? (readyStudents < connectedStudents ? 'Wait until all connected students are ready.' : 'Connect at least one student to start the experience.')
-        : 'The story could not be started. Check the server connection and try again.')
+        ? (readyStudents < connectedStudents ? 'Wait until every connected student is ready.' : 'Connect at least one student to start the experience.')
+        : 'The story could not be started. Check the connection to the server.')
     } finally {
       setIsStarting(false)
     }
@@ -201,11 +185,11 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     } catch (error) {
       setActionError(error instanceof ApiError
         ? error.status === 404
-          ? 'Serena.Api does not have the skip-introduction route enabled. Restart the API; this will clear current sessions.'
+          ? 'Serena.Api does not have the skip route enabled yet. Restart the API; this will clear the current sessions.'
           : error.status === 409
             ? 'The introduction has already ended or no students are connected.'
             : error.status === 401
-              ? 'Your teacher session has expired. Please sign in again.'
+              ? 'The teacher session expired. Please sign in again.'
               : 'The introduction could not be skipped. Check the connection and try again.'
         : 'The introduction could not be skipped. Check the connection and try again.')
     } finally {
@@ -223,8 +207,22 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
       setNarrativeState(state)
       return true
     } catch {
-      setActionError('The decision could not be saved. Check the session connection.')
+      setActionError('The decision could not be saved. Check the connection to the session.')
       return false
+    } finally {
+      setIsSettingAdvanceMode(false)
+    }
+  }
+
+  // H.U. 9.3.1: el grupo vuelve a la etapa 3 con las opciones más votadas bloqueadas.
+  async function exploreAlternativeDecision() {
+    setIsSettingAdvanceMode(true)
+    setActionError('')
+    try {
+      const state = await apiRequest<NarrativeState>('/sessions/' + sessionCode + '/alternative-decision', { method: 'POST' })
+      setNarrativeState(state)
+    } catch {
+      setActionError('The alternative decision could not be started. Check the connection to the session.')
     } finally {
       setIsSettingAdvanceMode(false)
     }
@@ -236,25 +234,39 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
     try { await onReturnToChapters() }
     catch (error) {
       setActionError(error instanceof ApiError && error.status === 404
-        ? 'The API did not recognize the stop-story request. Restart Serena.Api and try again.'
-        : 'The story could not be stopped. Check the session connection and try again.')
+        ? 'The API does not recognize the command to stop the story. Restart Serena.Api and try again.'
+        : 'The story could not be stopped. Check the session and the connection and try again.')
     }
     finally { setIsReturning(false) }
+  }
+
+  async function openSessionReport() {
+    setIsCreatingReport(true)
+    setActionError('')
+    try {
+      const report = await apiRequest<SessionReport>('/sessions/' + sessionCode + '/report', { method: 'POST' })
+      setSessionReport(report)
+      setIsSummaryOpen(true)
+    } catch {
+      setActionError('The group report could not be saved. The session is still active; please try again.')
+    } finally {
+      setIsCreatingReport(false)
+    }
   }
 
 
   const connectionCode = sessionCode.match(/.{1,3}/g)?.join(' ') ?? sessionCode
 
   return (
-    isSummaryOpen
-      ? <SessionSummary students={studentInteractions} votes={{ continue: narrativeState.continueVotes, alternative: narrativeState.alternativeVotes }} onFinish={returnToChapters} />
+    isSummaryOpen && sessionReport
+      ? <SessionSummary report={sessionReport} onFinish={() => void returnToChapters()} />
       :
     <main className="min-h-screen bg-white px-4 py-5 text-gray-950 sm:px-8">
       <header className="flex items-center justify-between">
-        {isFinalDecision ? <span className="text-sm font-bold uppercase tracking-[0.16em] text-stone-600">Serena - Wrap-up</span> : <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Stopping story...' : 'Back to chapters'}</button>}
+        {isFinalDecision ? <span className="text-sm font-bold uppercase tracking-[0.16em] text-stone-600">Serena · Wrap-up</span> : <button type="button" onClick={() => void returnToChapters()} disabled={isReturning} className="text-sm font-medium text-gray-800 hover:text-red-700 disabled:opacity-50">{isReturning ? 'Stopping the story…' : '← Back to chapters'}</button>}
         <div className="flex items-center gap-3">
           <button type="button" onClick={onLogout} className="text-sm font-medium text-gray-600 hover:text-red-700">Sign out</button>
-          {!isFinalDecision && <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="View keyboard shortcuts" aria-expanded={isControlsOpen} title="View keyboard shortcuts" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>}
+          {!isFinalDecision && <button type="button" onClick={() => setIsControlsOpen(true)} aria-label="View keyboard controls" aria-expanded={isControlsOpen} title="View keyboard controls" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 font-bold text-white hover:bg-slate-800">?</button>}
         </div>
       </header>
 
@@ -262,7 +274,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         <div className="sticky top-2 z-20 mx-auto mt-3 flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-md backdrop-blur">
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Group participation">
             <span><strong>{connectedStudents}</strong> connected</span>
-            <span><strong>{respondedStudents}</strong> responded</span>
+            <span><strong>{respondedStudents}</strong> answered</span>
             <span><strong>{Math.max(0, connectedStudents - respondedStudents)}</strong> pending</span>
           </div>
           <button
@@ -279,26 +291,17 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
 
       <section className={'mx-auto w-full ' + (isFinalDecision ? 'mt-10 max-w-4xl sm:mt-16' : 'mt-12 max-w-5xl sm:mt-20')}>
         {isFinalDecision ? (
-          <FinalDecisionPanel
-            state={narrativeState}
-            busy={isSettingAdvanceMode || isReturning}
-            error={actionError}
-            canConfirm={allReflectionsSubmitted}
-            completedReflections={completedReflections}
-            reflectionsExpected={reflectionParticipants.length}
-            onSelect={setAdvanceMode}
-            onConfirmFeedback={() => setIsSummaryOpen(true)}
-          />
+          <FinalDecisionPanel state={narrativeState} busy={isSettingAdvanceMode || isReturning || isCreatingReport} error={actionError} onSelect={setAdvanceMode} onFinish={() => void openSessionReport()} onExploreAlternative={() => void exploreAlternativeDecision()} />
         ) : <>
         <header className="text-center">
-          <h1 className="text-4xl font-extrabold text-black">Waiting Room</h1>
+          <h1 className="text-4xl font-extrabold text-black">Waiting room</h1>
           <p className="mt-2 text-base font-medium text-gray-600">Chapter 1: Story 1</p>
           <p className="mt-3 text-sm text-gray-500">{isLive ? 'Live connection active' : 'Reconnecting to the session…'}</p>
         </header>
 
         <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
           <section className="min-h-[250px] rounded-2xl border border-gray-100 p-7 shadow-sm">
-            <h2 className="text-base font-bold">Session code</h2>
+            <h2 className="text-base font-bold">Connection code</h2>
             <p className="mt-8 text-5xl font-black tracking-[0.15em] text-red-600 sm:text-6xl">{connectionCode}</p>
             <p className="mt-3 text-sm text-gray-600">Connected students: {connectedStudents}</p>
             <p className="text-sm text-gray-600">Marked as ready: {readyStudents}</p>
@@ -328,7 +331,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
           <section className="mx-auto mt-7 max-w-2xl rounded-xl border border-gray-200 bg-gray-50 p-5">
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
             <button type="button" onClick={() => void startExperience()} disabled={connectedStudents < 1 || readyStudents < connectedStudents || isStarting} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">
-              {isStarting ? 'Starting…' : connectedStudents < 1 ? 'Connect at least one student' : readyStudents < connectedStudents ? 'Waiting for students to be ready (' + readyStudents + '/' + connectedStudents + ')' : 'Start experience'}
+              {isStarting ? 'Starting…' : connectedStudents < 1 ? 'Connect at least one student' : readyStudents < connectedStudents ? 'Waiting for students to be ready (' + readyStudents + '/' + connectedStudents + ')' : 'Start the experience and open the projection'}
             </button>
           </section>
         ) : (
@@ -336,28 +339,29 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Experience in progress</p>
-                <h2 className="mt-1 text-lg font-bold">{narrativeState.stage === 0 ? 'Introduction in progress' : (stageTitles[narrativeState.stage] ?? 'Story') + ' - Stage ' + narrativeState.stage + ' of 5'}</h2>
+                <h2 className="mt-1 text-lg font-bold">{narrativeState.stage === 0 ? "Introduction in progress" : narrativeState.stageLabel + " · Stage " + narrativeState.stage + " of 5"}</h2>
               </div>
+              {projectionPath && <a href={projectionPath} target="_blank" rel="noreferrer" className="text-sm font-semibold text-red-700 underline">Open projection</a>}
             </div>
-            <p className="mt-3 text-sm text-gray-600">{stageDescriptions[narrativeState.stage] ?? narrativeState.stageDescription}</p>
+            <p className="mt-3 text-sm text-gray-600">{narrativeState.stageDescription}</p>
             {narrativeState.stage < 5 && (
               <fieldset className="mt-5 rounded-xl border border-gray-200 bg-white p-4">
-                <legend className="px-1 text-sm font-bold text-gray-900">End-of-story voting mode</legend>
-                <p className="text-sm text-gray-600">Choose this before the story ends. You can change it during the experience.</p>
+                <legend className="px-1 text-sm font-bold text-gray-900">How the wrap-up advances</legend>
+                <p className="text-sm text-gray-600">Set it before the story ends. You can change it during the experience.</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <button type="button" onClick={() => void setAdvanceMode('automatic')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.advanceMode === 'automatic'} className={'rounded-lg border px-4 py-3 text-left disabled:opacity-60 ' + (narrativeState.advanceMode === 'automatic' ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600' : 'border-gray-300 bg-white hover:bg-gray-50')}>
-                    <strong className="block text-sm">Continue automatically</strong>
-                    <span className="mt-1 block text-xs text-gray-600">End the story without asking the group to vote.</span>
+                    <strong className="block text-sm">Automatic advance</strong>
+                    <span className="mt-1 block text-xs text-gray-600">The wrap-up happens without asking the group to vote.</span>
                   </button>
                   <button type="button" onClick={() => void setAdvanceMode('vote')} disabled={isSettingAdvanceMode} aria-pressed={narrativeState.advanceMode === 'vote'} className={'rounded-lg border px-4 py-3 text-left disabled:opacity-60 ' + (narrativeState.advanceMode === 'vote' ? 'border-red-600 bg-red-50 ring-2 ring-red-600' : 'border-gray-300 bg-white hover:bg-gray-50')}>
                     <strong className="block text-sm">Group vote</strong>
-                    <span className="mt-1 block text-xs text-gray-600">At the end, each student votes from their tablet.</span>
+                    <span className="mt-1 block text-xs text-gray-600">At the wrap-up, each student decides on their tablet.</span>
                   </button>
                 </div>
               </fieldset>
             )}
-            <p className="mt-2 text-sm text-gray-600">Introduction completed on tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
-            {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Skipping introduction?' : 'Skip introduction'}</button>}
+            <p className="mt-2 text-sm text-gray-600">Introduction finished on tablets: {narrativeState.introCompletedStudents}/{connectedStudents}</p>
+            {narrativeState.stage === 0 && <button type="button" onClick={() => void skipIntroduction()} disabled={isSkippingIntro || connectedStudents === 0} className="mt-4 w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300">{isSkippingIntro ? 'Skipping the introduction…' : 'Skip introduction'}</button>}
             {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
           </section>
         )}

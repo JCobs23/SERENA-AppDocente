@@ -5,8 +5,9 @@ import LoginScreen from './components/LoginScreen'
 import WaitingRoom from './components/WaitingRoom'
 import ProjectionScreen from './components/ProjectionScreen'
 import WelcomeScreen from './components/WelcomeScreen'
+import ReportHistory from './components/ReportHistory'
 
-type Screen = 'checking-session' | 'login' | 'welcome' | 'catalog' | 'waiting-room'
+type Screen = 'checking-session' | 'login' | 'welcome' | 'catalog' | 'waiting-room' | 'reports'
 type Teacher = { email: string }
 type NewSession = { code: string }
 
@@ -38,15 +39,15 @@ function TeacherApp() {
       setScreen('waiting-room')
     } catch (error) {
       setSessionError(error instanceof ApiError && error.status === 401
-        ? 'Your teacher session has expired. Please sign in again.'
-        : 'The session could not be created. Check that Serena.Api is running and try again.')
+        ? 'Your teacher session expired. Please sign in again.'
+        : 'The session could not be created. Make sure Serena.Api is running and try again.')
     } finally {
       setIsCreatingSession(false)
     }
   }
 
   async function logout() {
-    try { await apiRequest<void>('/auth/logout', { method: 'POST' }) } catch { /* The local session is cleared as well. */ }
+    try { await apiRequest<void>('/auth/logout', { method: 'POST' }) } catch { /* La sesión local también se cierra. */ }
     setTeacherEmail('')
     setSessionCode('')
     setScreen('login')
@@ -72,6 +73,7 @@ function TeacherApp() {
         isCreatingSession={isCreatingSession}
         sessionError={sessionError}
         onLogout={logout}
+        onOpenReports={() => setScreen('reports')}
         onNarrativeSelect={() => { void createClassroomSession() }}
       />
     )
@@ -79,6 +81,10 @@ function TeacherApp() {
 
   if (screen === 'waiting-room') {
     return <WaitingRoom sessionCode={sessionCode} onLogout={logout} onReturnToChapters={returnToChapters} />
+  }
+
+  if (screen === 'reports') {
+    return <ReportHistory onClose={() => setScreen('catalog')} />
   }
 
   return <WelcomeScreen onContinue={() => setScreen('catalog')} />

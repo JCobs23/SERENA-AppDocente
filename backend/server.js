@@ -51,8 +51,8 @@ app.get('/covers-manifest', async (request, response) => {
 
     response.json({ covers })
   } catch (error) {
-    console.error('No se pudieron leer las portadas:', error)
-    response.status(500).json({ message: 'No se pudieron leer las portadas.' })
+    console.error('Could not read the covers:', error)
+    response.status(500).json({ message: 'Could not read the covers.' })
   }
 })
 
@@ -61,15 +61,15 @@ const io = new Server(server, {
 })
 
 io.on('connection', (socket) => {
-  console.log(`Cliente conectado: ${socket.id}`)
+  console.log(`Client connected: ${socket.id}`)
   socket.on('docente:continuar_sesion', () => {
-    console.log('El docente avanzó en la sesión.')
+    console.log('The teacher moved the session forward.')
     socket.emit('docente:continuar_confirmado', {
-      message: 'El docente avanzó en la sesión.',
+      message: 'The teacher moved the session forward.',
     })
   })
-  socket.on('disconnect', () => console.log(`Cliente desconectado: ${socket.id}`))
+  socket.on('disconnect', () => console.log(`Client disconnected: ${socket.id}`))
 })
 
 const PORT = process.env.PORT || 3001
-server.listen(PORT, () => console.log(`Servidor disponible en http://localhost:${PORT}`))
+server.listen(PORT, () => console.log(`Server available at http://localhost:${PORT}`))

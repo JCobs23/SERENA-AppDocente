@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Mail;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -19,12 +18,12 @@ var teacherSessionLifetime = TimeSpan.FromHours(8);
 const string sessionCookieName = "Serena.Session";
 var narrativeStages = new[]
 {
-    (Title: "En espera", Description: "Esperando a que el docente inicie la experiencia."),
-    (Title: "Narrativa inicial", Description: "Observa la situación y comprende el contexto."),
-    (Title: "Reconocer la emoción", Description: "Identifica qué emoción aparece en esta situación."),
-    (Title: "Elegir una decisión", Description: "Piensa en las alternativas y elige cómo actuar."),
-    (Title: "Ver las consecuencias", Description: "Observa cómo afectó la situación a las personas involucradas."),
-            (Title: "Reflexionar en grupo", Description: "Comparte una reflexión sobre lo ocurrido.")
+    (Title: "Waiting", Description: "Waiting for the teacher to start the experience."),
+    (Title: "Opening story", Description: "Watch the situation and understand the context."),
+    (Title: "Recognize the emotion", Description: "Identify which emotion appears in this situation."),
+    (Title: "Choose a decision", Description: "Think about the alternatives and choose how to act."),
+    (Title: "See the consequences", Description: "See how the situation affected the people involved."),
+            (Title: "Reflect as a group", Description: "Share a reflection on what happened.")
 };
 NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
 {
@@ -32,7 +31,7 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
     var media = classroom.GetMediaState();
     var voting = classroom.GetVotingState();
     var stage = state.Started && state.Stage == 0
-        ? (Title: "Introducción", Description: "Mira el video introductorio antes de comenzar la narrativa.")
+        ? (Title: "Introduction", Description: "Watch the introduction video before the story begins.")
         : narrativeStages[state.Stage];
     return new NarrativeClientState(
         state.Started, state.Stage, stage.Title, stage.Description, state.Revision,
@@ -44,7 +43,8 @@ NarrativeClientState BuildNarrativeState(ClassroomSession classroom)
         classroom.Presence.Values.Count(student => student.IsConnected && student.IsIntroCompleted),
         BuildInteractionCounts(classroom, isEmotion: true),
         BuildInteractionCounts(classroom, isEmotion: false),
-        voting.Mode, voting.IsOpen, voting.ContinueCount, voting.AlternativeCount, voting.FinalDecision, voting.Round
+        voting.Mode, voting.IsOpen, voting.ContinueCount, voting.AlternativeCount, voting.FinalDecision, voting.Round,
+        classroom.GetBlockedDecisions()
     );
 }
 
@@ -67,6 +67,7 @@ var databasePath = Path.IsPathRooted(configuredDatabasePath)
     : Path.Combine(apiContentRoot, configuredDatabasePath);
 var database = new SerenaDatabase(databasePath);
 database.Initialize(ReadTeacherUsers(usersPath));
+var reportService = new SessionReportService(database, builder.Configuration);
 foreach (var snapshot in database.LoadSessions(DateTimeOffset.UtcNow, sessionLifetime))
     sessions[snapshot.Code] = ClassroomSession.Restore(snapshot);
 
@@ -182,7 +183,8 @@ app.MapGet("/api/sessions/{code}", (string code) =>
         narrativeState.ContinueVotes,
         narrativeState.AlternativeVotes,
         narrativeState.FinalDecision,
-        narrativeState.VoteRound
+        narrativeState.VoteRound,
+        narrativeState.BlockedDecisions
     });
 });
 
@@ -264,10 +266,13 @@ async Task<IResult> SaveStudentInteraction(string code, string studentId, string
 
     var normalizedValue = value?.Trim();
     var allowedValues = isEmotion
-        ? new[] { "Curioso", "Miedo a la exclusión", "Neutral", "Incómodo", "Confundido" }
-        : new[] { "Dialogar directamente", "Evitar involucrarse", "Difundir el rumor", "Cambiar el tema" };
+        ? new[] { "Curious", "Fear of exclusion", "Neutral", "Uncomfortable", "Confused" }
+        : new[] { "Talk directly", "Avoid getting involved", "Spread the rumor", "Change the subject" };
     if (string.IsNullOrWhiteSpace(normalizedValue) || !allowedValues.Contains(normalizedValue, StringComparer.Ordinal))
         return Results.BadRequest(new { message = "Choose one of the available interaction options." });
+    // H.U. 9.3.1: no se puede reelegir una opción que fue la más votada en una ronda anterior.
+    if (!isEmotion && session.IsDecisionBlocked(normalizedValue))
+        return Results.UnprocessableEntity(new { message = "This option was the most chosen in a previous round. Choose an alternative." });
 
     student.SetInteraction(isEmotion, normalizedValue);
     await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
@@ -326,40 +331,93 @@ app.MapPost("/api/sessions/{code}/reset", async (HttpContext context, string cod
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
 
+    if (session.GetNarrativeState().Started)
+        reportService.CreateOrGet(session);
     session.ResetNarrative();
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
     return Results.Ok(state);
 });
 
-app.MapPost("/api/sessions/{code}/repeat", async (HttpContext context, string code) =>
+app.MapPost("/api/sessions/{code}/report", (HttpContext context, string code) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
         return Results.Unauthorized();
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
-        return Results.NotFound(new { message = "Session does not exist or has expired." });
-    if (!session.RepeatNarrative())
-        return Results.Conflict(new { message = "The narrative can only be repeated after stage 5." });
+        return Results.NotFound();
+    if (!session.GetNarrativeState().Started)
+        return Results.Conflict(new { message = "The narrative has not started." });
 
-    var state = BuildNarrativeState(session);
-    await session.BroadcastNarrativeStateAsync(state);
-    return Results.Ok(state);
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(reportService.CreateOrGet(session));
 });
 
-app.MapPost("/api/sessions/{code}/open-vote", async (HttpContext context, string code) =>
+app.MapGet("/api/reports/recipients", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out _))
+        return Results.Unauthorized();
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(new { recipients = reportService.AuthorizedRecipients });
+});
+
+app.MapPost("/api/reports/{reportId}/send", async (HttpContext context, string reportId, SendReportRequest request, CancellationToken cancellationToken) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
         return Results.Unauthorized();
-    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
-        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
-        return Results.NotFound(new { message = "Session does not exist or has expired." });
-    if (!session.OpenFinalVote())
-        return Results.Conflict(new { message = "All connected students must submit their four reflections before voting opens." });
+    if (!System.Net.Mail.MailAddress.TryCreate(request.Recipient, out var recipient)
+        || !reportService.AuthorizedRecipients.Contains(recipient.Address, StringComparer.OrdinalIgnoreCase))
+        return Results.BadRequest(new { message = "This email address is not configured as an authorized recipient." });
 
-    var state = BuildNarrativeState(session);
-    await session.BroadcastNarrativeStateAsync(state);
-    return Results.Ok(state);
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    if (stored is null)
+        return Results.NotFound();
+
+    try
+    {
+        await reportService.SendAsync(stored, recipient.Address, cancellationToken);
+        var sentAt = DateTimeOffset.UtcNow;
+        database.MarkReportSent(reportId, recipient.Address, sentAt);
+        return Results.Ok(new { sent = true, recipient = recipient.Address, subject = "Student report", sentAt });
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Problem(title: "Email is not configured", detail: exception.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception)
+    {
+        return Results.Problem(title: "The report could not be sent", detail: "Check the SMTP settings and try again.", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+app.MapGet("/api/reports", (HttpContext context) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(database.GetReportsForTeacher(teacher.Email));
+});
+
+app.MapGet("/api/reports/{reportId}", (HttpContext context, string reportId) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    if (stored is null)
+        return Results.NotFound();
+    var summary = JsonSerializer.Deserialize<SessionReportSummary>(stored.SummaryJson,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    context.Response.Headers.CacheControl = "no-store";
+    return summary is null ? Results.Problem("The stored report is invalid.") : Results.Ok(summary);
+});
+
+app.MapGet("/api/reports/{reportId}/pdf", (HttpContext context, string reportId) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    var stored = database.GetReportForTeacher(reportId, teacher.Email);
+    return stored is null
+        ? Results.NotFound()
+        : Results.File(stored.Pdf, "application/pdf", $"SERENA-{stored.SessionCode}.pdf");
 });
 
 app.MapPost("/api/sessions/{code}/skip-intro", async (HttpContext context, string code) =>
@@ -398,6 +456,22 @@ app.MapPost("/api/sessions/{code}/stage", async (HttpContext context, string cod
         await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
     return Results.Ok(BuildNarrativeState(session));
 });
+// H.U. 9.3.1: el docente lleva al grupo a explorar una decisión alternativa. Las opciones
+// más votadas en la ronda actual quedan bloqueadas y las tablets vuelven a la etapa 3.
+app.MapPost("/api/sessions/{code}/alternative-decision", async (HttpContext context, string code) =>
+{
+    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
+        return Results.Unauthorized();
+    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
+        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { message = "Session does not exist or has expired." });
+    if (!session.TryExploreAlternativeDecision())
+        return Results.Conflict(new { message = "An alternative decision can only be explored from the final stage." });
+
+    var state = BuildNarrativeState(session);
+    await session.BroadcastNarrativeStateAsync(state);
+    return Results.Ok(state);
+});
 app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string code, MediaControlRequest request) =>
 {
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
@@ -406,7 +480,7 @@ app.MapPost("/api/sessions/{code}/media", async (HttpContext context, string cod
         || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
         return Results.NotFound(new { message = "Session does not exist or has expired." });
     if (!session.ControlNarrativeMedia(request.Action ?? string.Empty))
-        return Results.Conflict(new { message = "Media controls are available only during stage 1." });
+        return Results.Conflict(new { message = "Media controls are available only during stages 1 and 4." });
 
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
@@ -430,6 +504,7 @@ app.MapPost("/api/sessions/{code}/media/volume", async (HttpContext context, str
 });
 app.MapPost("/api/sessions/{code}/advance-mode", async (HttpContext context, string code, AdvanceModeRequest request) =>
 {
+    var responseTimer = Stopwatch.StartNew();
     if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
         return Results.Unauthorized();
     if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
@@ -439,6 +514,7 @@ app.MapPost("/api/sessions/{code}/advance-mode", async (HttpContext context, str
         return Results.BadRequest(new { message = "Mode must be 'automatic' or 'vote'." });
     var state = BuildNarrativeState(session);
     await session.BroadcastNarrativeStateAsync(state);
+    context.Response.Headers["Server-Timing"] = $"final-decision;dur={responseTimer.Elapsed.TotalMilliseconds:0.##}";
     return Results.Ok(state);
 });
 app.MapGet("/api/sessions/{code}/interactions", (HttpContext context, string code) =>
@@ -451,66 +527,6 @@ app.MapGet("/api/sessions/{code}/interactions", (HttpContext context, string cod
 
     context.Response.Headers.CacheControl = "no-store";
     return Results.Ok(session.Presence.Values.Select(student => student.InteractionToDto()).ToArray());
-});
-app.MapPost("/api/sessions/{code}/report", async (HttpContext context, string code, IConfiguration configuration) =>
-{
-    if (!context.Request.IsHttps || !TryGetTeacher(context, teacherSessions, sessionCookieName, out var teacher))
-        return Results.Unauthorized();
-    if (!IsSessionCode(code) || !sessions.TryGetValue(code, out var session) || IsExpired(session, sessionLifetime)
-        || !string.Equals(session.TeacherEmail, teacher.Email, StringComparison.OrdinalIgnoreCase))
-        return Results.NotFound(new { message = "Session does not exist or has expired." });
-
-    var host = configuration["Email:Smtp:Host"];
-    var user = configuration["Email:Smtp:User"];
-    var password = configuration["Email:Smtp:Password"];
-    var from = configuration["Email:Smtp:From"];
-    if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user)
-        || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(from))
-        return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
-            title: "El envío de correo no está configurado en Serena.Api.");
-
-    var snapshot = session.ExportSnapshot();
-    var voting = session.GetVotingState();
-    static string Html(string? value) => WebUtility.HtmlEncode(value ?? "—");
-    var studentRows = string.Join("", snapshot.Students.Select(student =>
-        $"<tr><td>{Html(student.Name)}</td><td>{Html(student.Emotion)}</td><td>{Html(student.Decision)}</td><td>{Html(student.Reflection?.Replace(',', ' '))}</td></tr>"));
-    var reportHtml = $"""
-        <h1>Reporte de la sesión Serena {Html(code)}</h1>
-        <p>Participantes: {snapshot.Students.Count}</p>
-        <h2>Votación del grupo</h2>
-        <p>Repetir la experiencia: {voting.ContinueCount} · Finalizar la experiencia: {voting.AlternativeCount}</p>
-        <h2>Respuestas de los estudiantes</h2>
-        <table border="1" cellpadding="6" cellspacing="0">
-        <thead><tr><th>Estudiante</th><th>Emoción</th><th>Decisión</th><th>Reflexiones (S/N)</th></tr></thead>
-        <tbody>{studentRows}</tbody></table>
-        """;
-
-    try
-    {
-        var port = int.TryParse(configuration["Email:Smtp:Port"], out var configuredPort) ? configuredPort : 587;
-        var enableSsl = !bool.TryParse(configuration["Email:Smtp:EnableSsl"], out var configuredSsl) || configuredSsl;
-        using var message = new MailMessage(from, teacher.Email)
-        {
-            Subject = $"Reporte Serena · Sesión {code}",
-            Body = reportHtml,
-            IsBodyHtml = true
-        };
-        using var smtp = new SmtpClient(host, port)
-        {
-            EnableSsl = enableSsl,
-            Credentials = new NetworkCredential(user, password)
-        };
-        await smtp.SendMailAsync(message);
-    }
-    catch (Exception exception) when (exception is SmtpException or InvalidOperationException or FormatException)
-    {
-        return Results.Problem(statusCode: StatusCodes.Status502BadGateway,
-            title: "Serena.Api no pudo enviar el reporte. Verifica la configuración SMTP.");
-    }
-
-    session.ResetNarrative();
-    await session.BroadcastNarrativeStateAsync(BuildNarrativeState(session));
-    return Results.Ok(new { sent = true, email = teacher.Email });
 });
 app.MapMethods("/api/sessions/{code}/stream", ["GET"], async (HttpContext context, string code) =>
 {
@@ -615,6 +631,7 @@ sealed record TeacherCredential(string Email, string Salt, string PasswordHash, 
 sealed record TeacherSession(string Email, DateTimeOffset ExpiresAt);
 sealed record LoginAttemptWindow(DateTimeOffset StartedAt, int Count);
 sealed record LoginRequest(string? Email, string? Password);
+sealed record SendReportRequest(string? Recipient);
 sealed record JoinRequest(string? Name, string? StudentId = null);
 sealed record ReadyRequest(bool Ready);
 sealed record StageChangeRequest(int Direction);
@@ -625,7 +642,7 @@ sealed record ReflectionRequest(string? Answers);
 sealed record VoteSummary(int Round, int ContinueCount, int AlternativeCount);
 sealed record VoteRequest(string? Choice);
 sealed record AdvanceModeRequest(string? Mode);
-sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int VolumePercent, int ConnectedStudents, int ParticipantCount, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts, string AdvanceMode, bool VotingOpen, int ContinueVotes, int AlternativeVotes, string? FinalDecision, int VoteRound);
+sealed record NarrativeClientState(bool NarrativeStarted, int Stage, string StageLabel, string StageDescription, int Revision, bool MediaPaused, double MediaPositionSeconds, int MediaRevision, string MediaCommand, int VolumePercent, int ConnectedStudents, int ParticipantCount, int ReadyStudents, int IntroCompletedStudents, Dictionary<string, int> EmotionCounts, Dictionary<string, int> DecisionCounts, string AdvanceMode, bool VotingOpen, int ContinueVotes, int AlternativeVotes, string? FinalDecision, int VoteRound, string[] BlockedDecisions);
 
 sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teacherEmail)
 {
@@ -644,6 +661,9 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     private string? finalDecision;
     private int voteRound;
     private readonly Dictionary<string, string> votes = new(StringComparer.Ordinal);
+    // H.U. 9.3.1: decisiones más votadas en rondas anteriores (no se pueden reelegir).
+    private readonly List<string> blockedDecisions = [];
+    private const int DecisionOptionCount = 4;
 
     public string Code { get; } = code;
     public DateTimeOffset CreatedAt { get; } = createdAt;
@@ -707,8 +727,65 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
                 voteRound++;
             }
             advanceMode = mode;
+            if (currentStage == 5)
+            {
+                finalDecision = mode == "vote" ? "vote" : "continue";
+                votingOpen = mode == "vote";
+            }
+            else
+            {
+                votingOpen = false;
+                finalDecision = null;
+            }
+            revision++;
+            return true;
+        }
+    }
+
+    public string[] GetBlockedDecisions()
+    {
+        lock (stateGate) return blockedDecisions.ToArray();
+    }
+
+    public bool IsDecisionBlocked(string decision)
+    {
+        lock (stateGate) return blockedDecisions.Contains(decision, StringComparer.Ordinal);
+    }
+
+    public bool TryExploreAlternativeDecision()
+    {
+        lock (stateGate)
+        {
+            if (!narrativeStarted || currentStage != 5) return false;
+
+            var counts = Presence.Values
+                .Select(student => student.GetDecision())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .GroupBy(value => value!, StringComparer.Ordinal)
+                .Select(group => (Decision: group.Key, Count: group.Count()))
+                .ToArray();
+            if (counts.Length > 0)
+            {
+                var top = counts.Max(item => item.Count);
+                var mostVoted = counts.Where(item => item.Count == top).Select(item => item.Decision).ToArray();
+                foreach (var decision in mostVoted)
+                    if (!blockedDecisions.Contains(decision, StringComparer.Ordinal))
+                        blockedDecisions.Add(decision);
+                // Siempre debe quedar al menos una opción disponible para el grupo.
+                if (blockedDecisions.Count >= DecisionOptionCount)
+                {
+                    blockedDecisions.Clear();
+                    if (mostVoted.Length < DecisionOptionCount)
+                        blockedDecisions.AddRange(mostVoted);
+                }
+            }
+
+            foreach (var student in Presence.Values) student.ClearDecisionRound();
+            currentStage = 3;
             votingOpen = false;
             finalDecision = null;
+            votes.Clear();
+            voteRound++;
             revision++;
             return true;
         }
@@ -726,40 +803,6 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             votes[studentId] = choice;
             revision++;
             summary = new VoteSummary(voteRound, votes.Values.Count(value => value == "continue"), votes.Values.Count(value => value == "alternative"));
-            return true;
-        }
-    }
-
-    public bool RepeatNarrative()
-    {
-        lock (stateGate)
-        {
-            if (!narrativeStarted || currentStage != 5) return false;
-            currentStage = 1;
-            advanceMode = "automatic";
-            votingOpen = false;
-            finalDecision = null;
-            votes.Clear();
-            voteRound++;
-            foreach (var student in Presence.Values) student.ClearInteractions();
-            StartMediaFromBeginning();
-            revision++;
-            return true;
-        }
-    }
-
-    public bool OpenFinalVote()
-    {
-        lock (stateGate)
-        {
-            if (!narrativeStarted || currentStage != 5 || votingOpen) return false;
-            var connectedStudents = Presence.Values.Where(student => student.IsConnected).ToArray();
-            if (connectedStudents.Length == 0 || connectedStudents.Any(student => !student.HasCompleteReflection())) return false;
-            votes.Clear();
-            voteRound++;
-            votingOpen = true;
-            finalDecision = "vote";
-            revision++;
             return true;
         }
     }
@@ -785,6 +828,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
             if (narrativeStarted) return;
             narrativeStarted = true;
             foreach (var student in Presence.Values) student.SetIntroCompleted(false);
+            blockedDecisions.Clear();
             currentStage = 0;
             advanceMode = "automatic";
             votingOpen = false;
@@ -806,6 +850,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         lock (stateGate)
         {
             narrativeStarted = false;
+            blockedDecisions.Clear();
             currentStage = 0;
             advanceMode = "automatic";
             votingOpen = false;
@@ -858,17 +903,18 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
         {
             var nextStage = Math.Clamp(currentStage + direction, 1, maxStage);
             if (nextStage == currentStage) return false;
-            if (nextStage == 1)
+            // Etapas con video proyectado: 1 (narrativa) y 4 (consecuencia de la decisión).
+            if (HasProjectedVideo(nextStage))
                 StartMediaFromBeginning();
-            else if (currentStage == 1)
+            else if (HasProjectedVideo(currentStage))
                 PauseMedia();
             currentStage = nextStage;
             if (nextStage == 5)
             {
                 votes.Clear();
                 voteRound++;
-                votingOpen = false;
-                finalDecision = null;
+                votingOpen = advanceMode == "vote";
+                finalDecision = advanceMode == "vote" ? "vote" : "continue";
             }
             else if (nextStage != 5)
             {
@@ -884,7 +930,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     {
         lock (stateGate)
         {
-            if (!narrativeStarted || currentStage != 1) return false;
+            if (!narrativeStarted || !HasProjectedVideo(currentStage)) return false;
             var now = DateTimeOffset.UtcNow;
             var currentPosition = GetMediaPosition(now);
             switch (action)
@@ -920,7 +966,7 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
     {
         lock (stateGate)
         {
-            if (!narrativeStarted || currentStage != 1) return false;
+            if (!narrativeStarted || !HasProjectedVideo(currentStage)) return false;
             if (volumePercent == value) return true;
             volumePercent = value;
             revision++;
@@ -930,6 +976,8 @@ sealed class ClassroomSession(string code, DateTimeOffset createdAt, string teac
 
     private double GetMediaPosition(DateTimeOffset now) => mediaPositionSeconds
         + (mediaPaused ? 0 : Math.Max(0, (now - mediaUpdatedAt).TotalSeconds));
+
+    private static bool HasProjectedVideo(int stage) => stage == 1 || stage == 4;
 
     private void StartMediaFromBeginning()
     {
@@ -1014,16 +1062,14 @@ sealed class StudentPresence(string id, string name, DateTimeOffset now)
         lock (gate) { emotion = null; decision = null; reflection = null; }
     }
 
+    // Nueva ronda de decisión: se conserva la emoción y se reinician decisión y reflexión.
+    public void ClearDecisionRound()
+    {
+        lock (gate) { decision = null; reflection = null; }
+    }
+
     public string? GetEmotion() { lock (gate) return emotion; }
     public string? GetDecision() { lock (gate) return decision; }
-    public bool HasCompleteReflection()
-    {
-        lock (gate)
-        {
-            var answers = reflection?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            return answers is { Length: 4 } && answers.All(answer => answer is "yes" or "no");
-        }
-    }
     public object InteractionToDto()
     {
         lock (gate) return new { studentId = Id, studentName = name, emotion, decision, reflection, connected, ready };

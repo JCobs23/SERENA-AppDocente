@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
-$email = (Read-Host 'Correo docente (@gmail.com)').Trim().ToLowerInvariant()
+$email = (Read-Host 'Teacher email (@gmail.com)').Trim().ToLowerInvariant()
 if ($email -notmatch '^[^\s@]+@gmail\.com$') {
-    throw 'El correo debe terminar en @gmail.com, como valida el formulario.'
+    throw 'The email must end in @gmail.com, as the form requires.'
 }
 
-$securePassword = Read-Host 'Contraseña (mínimo 12 caracteres)' -AsSecureString
+$securePassword = Read-Host 'Password (at least 12 characters)' -AsSecureString
 $pointer = [IntPtr]::Zero
 $plainPassword = $null
 $randomGenerator = $null
@@ -13,7 +13,7 @@ $pbkdf2 = $null
 try {
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-    if ($plainPassword.Length -lt 12) { throw 'La contraseña debe tener al menos 12 caracteres.' }
+    if ($plainPassword.Length -lt 12) { throw 'The password must be at least 12 characters long.' }
 
     $iterations = 600000
     $salt = [byte[]]::new(16)
@@ -51,7 +51,7 @@ try {
 
     $json = [ordered]@{ users = @($users.ToArray()) } | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText($usersPath, $json, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "Cuenta lista para $email; el JSON contiene el hash, no la contraseña."
+    Write-Host "Account ready for $email; the JSON stores the hash, not the password."
 }
 finally {
     if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
