@@ -26,7 +26,7 @@ type NarrativeState = {
   emotionCounts?: Record<string, number>
   decisionCounts?: Record<string, number>
 }
-type WaitingRoomProps = { sessionCode: string; onLogout: () => void; onReturnToChapters: () => Promise<void> }
+type WaitingRoomProps = { sessionCode: string; narrativeLabel?: string; onLogout: () => void; onReturnToChapters: () => Promise<void> }
 
 const initialNarrativeState: NarrativeState = {
   narrativeStarted: false, stage: 0, stageLabel: 'Waiting',
@@ -76,7 +76,7 @@ function NarrativeControls({ onClose }: { onClose: () => void }) {
   )
 }
 
-export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters }: WaitingRoomProps) {
+export default function WaitingRoom({ sessionCode, narrativeLabel = 'Chapter 1: Story 1', onLogout, onReturnToChapters }: WaitingRoomProps) {
   const [students, setStudents] = useState<Student[]>([])
   const [narrativeState, setNarrativeState] = useState(initialNarrativeState)
   const [isControlsOpen, setIsControlsOpen] = useState(false)
@@ -295,7 +295,7 @@ export default function WaitingRoom({ sessionCode, onLogout, onReturnToChapters 
         ) : <>
         <header className="text-center">
           <h1 className="text-4xl font-extrabold text-black">Waiting room</h1>
-          <p className="mt-2 text-base font-medium text-gray-600">Chapter 1: Story 1</p>
+          <p className="mt-2 text-base font-medium text-gray-600">{narrativeLabel}</p>
           <p className="mt-3 text-sm text-gray-500">{isLive ? 'Live connection active' : 'Reconnecting to the session…'}</p>
         </header>
 

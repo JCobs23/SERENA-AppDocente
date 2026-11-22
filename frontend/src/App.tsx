@@ -17,6 +17,7 @@ function TeacherApp() {
   const [sessionCode, setSessionCode] = useState('')
   const [sessionError, setSessionError] = useState('')
   const [isCreatingSession, setIsCreatingSession] = useState(false)
+  const [narrativeLabel, setNarrativeLabel] = useState('Chapter 1: Story 1')
 
   useEffect(() => {
     let isMounted = true
@@ -74,13 +75,13 @@ function TeacherApp() {
         sessionError={sessionError}
         onLogout={logout}
         onOpenReports={() => setScreen('reports')}
-        onNarrativeSelect={() => { void createClassroomSession() }}
+        onNarrativeSelect={(label) => { setNarrativeLabel(label); void createClassroomSession() }}
       />
     )
   }
 
   if (screen === 'waiting-room') {
-    return <WaitingRoom sessionCode={sessionCode} onLogout={logout} onReturnToChapters={returnToChapters} />
+    return <WaitingRoom sessionCode={sessionCode} narrativeLabel={narrativeLabel} onLogout={logout} onReturnToChapters={returnToChapters} />
   }
 
   if (screen === 'reports') {

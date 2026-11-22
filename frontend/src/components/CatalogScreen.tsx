@@ -1,5 +1,5 @@
 type CatalogScreenProps = {
-  onNarrativeSelect: () => void
+  onNarrativeSelect: (narrativeLabel: string) => void
   onOpenReports: () => void
   teacherEmail: string
   onLogout: () => void
@@ -92,9 +92,11 @@ export default function CatalogScreen({ onNarrativeSelect, onOpenReports, teache
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
               {chapter.narratives.map((narrative, narrativeIndex) => {
                 const globalNarrative = chapterIndex * 8 + narrativeIndex + 1
-                const isFirstNarrative = globalNarrative === 1
+                // Todas las historias se pueden abrir. Mientras se producen sus videos, cada una
+                // reutiliza el contenido de la historia 1 (Chapter 1, Story 1).
+                const narrativeLabel = `Chapter ${chapterIndex + 1}: Story ${narrativeIndex + 1}`
                 const card = <><div className="aspect-video bg-gray-800" /><NarrativeCover source={covers[String(chapterIndex + 1)]} title={narrative.title} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pb-3 pt-10"><p className="text-xs font-semibold text-red-500">Chapter {chapterIndex + 1}</p><p className="mt-1 text-sm font-bold leading-tight text-white">Story {narrativeIndex + 1}: {narrative.title}</p></div></>
-                return isFirstNarrative ? <button key={narrative.title} type="button" disabled={isCreatingSession} onClick={onNarrativeSelect} aria-busy={isCreatingSession} className="relative overflow-hidden rounded-xl text-left shadow-md transition duration-150 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">{card}</button> : <article key={narrative.title} className="relative overflow-hidden rounded-xl shadow-md">{card}</article>
+                return <button key={narrative.title} type="button" data-narrative={globalNarrative} disabled={isCreatingSession} onClick={() => onNarrativeSelect(narrativeLabel)} aria-busy={isCreatingSession} aria-label={`${narrativeLabel}: ${narrative.title}`} className="relative overflow-hidden rounded-xl text-left shadow-md transition duration-150 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">{card}</button>
               })}
             </div>
           </section>

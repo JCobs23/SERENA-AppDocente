@@ -129,6 +129,6 @@ Se crean en SQLite las cuentas profesor1@gmail.com hasta profesor10@gmail.com. T
 
 ## Envío del informe por correo
 
-El reporte final tiene el botón **Enviar informe** y adjunta el PDF con el asunto **Informe estudiantes**. El destinatario configurado es `javierlainv@gmail.com`; también se aprovisiona como cuenta docente de demostración con la contraseña `123456789abc`.
+El reporte final tiene el botón **Enviar informe** y adjunta el PDF con el asunto **Informe estudiantes**. La lista de destinatarios autorizados incluye `javierlainv@gmail.com`, `vmsalazarchaparro@gmail.com` y `nllanos@uao.edu.co`; el docente elige uno en la lista desplegable antes de enviar.
 
 Para habilitar el envío real por Gmail, crea una contraseña de aplicación para `javierlainv@gmail.com` y configura la variable de entorno de Windows con `setx SERENA_REPORTS_SMTP_PASSWORD "TU_CONTRASENA_DE_APLICACION"` y reemplaza el texto de ejemplo por la contraseña de aplicación. No uses ni guardes la contraseña normal de Gmail en el repositorio. Cierra y vuelve a iniciar Serena después de configurar la variable. Sin la contraseña de aplicación el botón mostrará que falta la configuración SMTP y no marcará el mensaje como enviado.
