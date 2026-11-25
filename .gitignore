@@ -51,3 +51,8 @@ DEPENDENCIAS/
 Thumbs.db
 *.swp
 *.swo
+
+# Documentos del curso (se entregan fuera del repositorio)
+*.docx
+*.pdf
+*.pptx
